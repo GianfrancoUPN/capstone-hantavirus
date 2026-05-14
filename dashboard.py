@@ -133,14 +133,16 @@ if fase == "1. Data Understanding (Exploración)":
         df_corr = df[rf_features + ['confirmed_cases']].rename(columns=NOMBRES_CORTOS)
         corr_matrix = df_corr.corr()
         fig_corr = px.imshow(corr_matrix, text_auto=".2f", aspect="auto", color_continuous_scale='RdBu_r', origin='lower')
-        fig_corr.update_layout(margin=dict(l=10, r=10, t=30, b=10))
+        # BLINDAJE TÁCTIL
+        fig_corr.update_layout(margin=dict(l=10, r=10, t=30, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
         st.plotly_chart(fig_corr, use_container_width=True, config={'displayModeBar': False})
         st.info("**Interpretación de la Matriz:** Los valores cercanos a 1 (rojo) indican una correlación positiva fuerte. Se observa que el *Índice de Roedores* y la *Precipitación* tienen el mayor impacto directo en los casos confirmados. Biológicamente, mayor lluvia genera más vegetación, lo que eleva la población del roedor reservorio.")
     
     with col2:
         st.subheader("Distribución Histórica de Casos")
         fig_hist = px.histogram(df, x='confirmed_cases', nbins=30, color='Nivel_Riesgo', title="Frecuencia de Brotes por Nivel de Riesgo")
-        fig_hist.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.4, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=30, b=10))
+        # BLINDAJE TÁCTIL
+        fig_hist.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.4, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=30, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
         st.plotly_chart(fig_hist, use_container_width=True, config={'displayModeBar': False})
         st.info("**Interpretación del Histograma:** Muestra el desbalance natural de la carga epidemiológica. La gran mayoría de los registros históricos caen en riesgo 'Bajo', siendo los brotes 'Altos' eventos anómalos. Esto justifica el uso de algoritmos de Machine Learning robustos como XGBoost para capturar estas excepciones.")
         
@@ -161,7 +163,8 @@ elif fase == "2. Modeling (Entrenamiento y Simulación)":
         
     fig_map = px.scatter_geo(df_mapa, lat='latitude', lon='longitude', color='Nivel_Riesgo', size='confirmed_cases',
                              hover_name='country', color_discrete_map={'Bajo':'green','Medio':'orange','Alto':'red'})
-    fig_map.update_layout(margin=dict(l=0, r=0, t=0, b=0), legend=dict(orientation="h", y=-0.2, xanchor="center", x=0.5))
+    # BLINDAJE TÁCTIL (Geo/Mapbox)
+    fig_map.update_layout(margin=dict(l=0, r=0, t=0, b=0), legend=dict(orientation="h", y=-0.2, xanchor="center", x=0.5), dragmode=False)
     st.plotly_chart(fig_map, use_container_width=True, config={'displayModeBar': False})
     
     st.divider()
@@ -195,7 +198,8 @@ elif fase == "2. Modeling (Entrenamiento y Simulación)":
         pesos = rf_model.feature_importances_ if modelo_elegido == "Random Forest" else xgb_model.feature_importances_
         importancia = pd.DataFrame({'Variable': [NOMBRES_CORTOS[f] for f in rf_features], 'Peso': pesos}).sort_values('Peso')
         fig_bar = px.bar(importancia, x='Peso', y='Variable', orientation='h', color='Peso', color_continuous_scale='Blues')
-        fig_bar.update_layout(margin=dict(l=10, r=10, t=30, b=10))
+        # BLINDAJE TÁCTIL
+        fig_bar.update_layout(margin=dict(l=10, r=10, t=30, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
         st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
         st.info(f"**Interpretación de Importancia:** Refleja la lógica interna de la IA. El modelo determina matemáticamente que la variable superior es el principal detonante para clasificar un brote de Hantavirus, mientras que las variables inferiores tienen menor peso en la decisión.")
 
@@ -233,7 +237,8 @@ elif fase == "3. Evaluation (Métricas y Rendimiento)":
     st.subheader("Tabla Resumen de Exactitud (Accuracy)")
     bench_df = pd.DataFrame({'Algoritmo': ['Random Forest', 'XGBoost'], 'Exactitud Global': [acc_rf, acc_xgb]})
     fig_acc = px.bar(bench_df, x='Algoritmo', y='Exactitud Global', color='Algoritmo', text_auto='.2%')
-    fig_acc.update_layout(yaxis_range=[0, 1], margin=dict(l=10, r=10, t=30, b=10))
+    # BLINDAJE TÁCTIL
+    fig_acc.update_layout(yaxis_range=[0, 1], margin=dict(l=10, r=10, t=30, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
     st.plotly_chart(fig_acc, use_container_width=True, config={'displayModeBar': False})
     st.info("**Interpretación de Exactitud:** Representa el porcentaje total de predicciones correctas sobre el conjunto de pruebas. Es un buen indicador general del desempeño del modelo.")
 
@@ -271,8 +276,8 @@ elif fase == "3. Evaluation (Métricas y Rendimiento)":
         fig_roc.add_trace(go.Scatter(x=fpr_grid, y=mean_tpr_xgb, mode='lines', name='XGBoost', line=dict(color='navy', width=3)))
         fig_roc.add_trace(go.Scatter(x=fpr_grid, y=mean_tpr_rf, mode='lines', name='Random Forest', line=dict(color='gold', width=3)))
         fig_roc.add_trace(go.Scatter(x=[0,1], y=[0,1], mode='lines', line=dict(dash='dash', color='crimson', width=2), name='Clasificador Aleatorio'))
-        
-        fig_roc.update_layout(title="Curva ROC Global", xaxis_title="Tasa de Falsos Positivos", yaxis_title="Sensibilidad", legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=40, b=10))
+        # BLINDAJE TÁCTIL
+        fig_roc.update_layout(title="Curva ROC Global", xaxis_title="Tasa de Falsos Positivos", yaxis_title="Sensibilidad", legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=40, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
         st.plotly_chart(fig_roc, use_container_width=True, config={'displayModeBar': False})
 
     # Gráfico del AUC del Ganador
@@ -286,11 +291,12 @@ elif fase == "3. Evaluation (Métricas y Rendimiento)":
         fig_auc = go.Figure()
         fig_auc.add_trace(go.Scatter(x=fpr_grid, y=tpr_ganador, mode='lines', fill='tozeroy', fillcolor=color_area, name=f'Área {nombre_ganador} (AUC = {mejor_auc:.3f})', line=dict(color=color_linea, width=3)))
         fig_auc.add_trace(go.Scatter(x=[0,1], y=[0,1], mode='lines', line=dict(dash='dash', color='gray', width=2), name='Referencia (0.5)'))
-        
-        fig_auc.update_layout(title="Modelo Óptimo: Área Bajo la Curva", xaxis_title="Tasa de Falsos Positivos", yaxis_title="Sensibilidad", legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=40, b=10))
+        # BLINDAJE TÁCTIL
+        fig_auc.update_layout(title="Modelo Óptimo: Área Bajo la Curva", xaxis_title="Tasa de Falsos Positivos", yaxis_title="Sensibilidad", legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=40, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
         st.plotly_chart(fig_auc, use_container_width=True, config={'displayModeBar': False})
 
-    st.success(f"**Interpretación ROC/AUC:** El gráfico ROC (izquierdo) evalúa qué algoritmo diferencia mejor los niveles de riesgo sin emitir falsas alarmas. La línea más abombada hacia la esquina superior izquierda es la mejor. El gráfico AUC (derecho) certifica que **{nombre_ganador}** es el modelo matemáticamente superior, logrando un área de **{mejor_auc:.3f}** (siendo 1.0 la clasificación perfecta).")
+    # TEXTO ACTUALIZADO (Sin la frase de la clasificación perfecta)
+    st.success(f"**Interpretación ROC/AUC:** El gráfico ROC (izquierdo) evalúa qué algoritmo diferencia mejor los niveles de riesgo sin emitir falsas alarmas. La línea más abombada hacia la esquina superior izquierda es la mejor. El gráfico AUC (derecho) certifica que **{nombre_ganador}** es el modelo matemáticamente superior, logrando un área de **{mejor_auc:.3f}**.")
 
     st.divider()
 
@@ -300,12 +306,14 @@ elif fase == "3. Evaluation (Métricas y Rendimiento)":
     with c_mat1:
         st.write("**Random Forest**")
         fig_cm_rf = px.imshow(rf_cm, text_auto=True, x=rf_model.classes_, y=rf_model.classes_, labels=dict(x="Predicción", y="Realidad"), color_continuous_scale='Blues')
-        fig_cm_rf.update_layout(margin=dict(l=10, r=10, t=10, b=10))
+        # BLINDAJE TÁCTIL
+        fig_cm_rf.update_layout(margin=dict(l=10, r=10, t=10, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
         st.plotly_chart(fig_cm_rf, use_container_width=True, config={'displayModeBar': False})
     with c_mat2:
         st.write("**XGBoost**")
         fig_cm_xgb = px.imshow(xgb_cm, text_auto=True, x=label_encoder.classes_, y=label_encoder.classes_, labels=dict(x="Predicción", y="Realidad"), color_continuous_scale='Oranges')
-        fig_cm_xgb.update_layout(margin=dict(l=10, r=10, t=10, b=10))
+        # BLINDAJE TÁCTIL
+        fig_cm_xgb.update_layout(margin=dict(l=10, r=10, t=10, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
         st.plotly_chart(fig_cm_xgb, use_container_width=True, config={'displayModeBar': False})
     st.info("**Interpretación de las Matrices:** La diagonal de colores oscuros representa los aciertos, donde la predicción coincide con la realidad. Los valores fuera de la diagonal muestran en qué clases se confunde el modelo (falsos positivos/negativos).")
 
@@ -340,7 +348,7 @@ else:
     fig_p.add_scatter(x=pred['ds'], y=pred['yhat_upper'], mode='lines', line=dict(width=0), showlegend=False, hoverinfo='skip')
     fig_p.add_scatter(x=pred['ds'], y=pred['yhat_lower'], mode='lines', fill='tonexty', line=dict(width=0), showlegend=False, name="Margen de Error", hoverinfo='skip')
     
-    # Forzamos a que aparezca el recuadro blanco clásico y bloqueamos el zoom táctil
+    # BLINDAJE TÁCTIL
     fig_p.update_layout(
         xaxis_title="Año de Proyección",
         yaxis_title="Casos Proyectados",
