@@ -226,7 +226,12 @@ else:
     fut = prophet_model.make_future_dataframe(periods=años, freq='YS')
     pred = prophet_model.predict(fut)
     
-    fig_p = px.line(pred, x='ds', y='yhat', title="Curva de Casos Históricos y Predicción de Tendencia")
+    # --- AQUI ESTÁ EL CAMBIO DE LAS ETIQUETAS (LABELS) ---
+    fig_p = px.line(pred, x='ds', y='yhat', 
+                    title="Curva de Casos Históricos y Predicción de Tendencia",
+                    labels={'ds': 'Año de Proyección', 'yhat': 'Casos Proyectados (Tendencia)'})
+    # -----------------------------------------------------
+    
     fig_p.add_scatter(x=pred['ds'], y=pred['yhat_upper'], mode='lines', line=dict(width=0), showlegend=False)
     fig_p.add_scatter(x=pred['ds'], y=pred['yhat_lower'], mode='lines', fill='tonexty', line=dict(width=0), showlegend=False, name="Margen de Error")
     st.plotly_chart(fig_p, width="stretch")
