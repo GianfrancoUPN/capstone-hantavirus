@@ -7,15 +7,41 @@ from prophet import Prophet
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
-from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, roc_curve, auc
+from sklearn.preprocessing import LabelEncoder, label_binarize
 
-# 1. Configuración General
+# ==========================================
+# 1. Configuración General Adaptativa
+# ==========================================
 st.set_page_config(page_title="Vigilancia Hantavirus IA", layout="wide", initial_sidebar_state="expanded")
+
+# Inyección CSS para bloquear el zoom en móviles y adaptar gráficas
+st.markdown(
+    """
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <style>
+        .stPlotlyChart { width: 100%; }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 st.title("🦠 Predicción de Brotes de Hantavirus")
 st.markdown("*Proyecto basado en la metodología CRISP-DM (Cross-Industry Standard Process for Data Mining)*")
 
-# 2. Carga y Preparación de Datos (Data Preparation)
+# Diccionario de nombres cortos para evitar que se aplasten los gráficos en el celular
+NOMBRES_CORTOS = {
+    'avg_temp_c': 'Temp (°C)',
+    'rainfall_mm': 'Lluvia (mm)',
+    'humidity_pct': 'Humedad (%)',
+    'rodent_abundance_index': 'Roedores',
+    'densidad_poblacional': 'Dens. Pob.',
+    'confirmed_cases': 'Casos'
+}
+
+# ==========================================
+# 2. Carga y Preparación de Datos
+# ==========================================
 @st.cache_data
 def cargar_datos():
     df = pd.read_csv('Dataset_Epidemiologico_Consolidado.csv')
@@ -33,13 +59,14 @@ def cargar_datos():
 
 df = cargar_datos()
 
-# --- BOTÓN DE REFRESCO DE CACHÉ ---
 if st.sidebar.button("♻️ Recargar Dataset desde Disco"):
     st.cache_data.clear()
     st.cache_resource.clear()
     st.rerun()
 
+# ==========================================
 # 3. Entrenamiento (Modeling)
+# ==========================================
 @st.cache_resource
 def entrenar_modelos(datos):
     features = ['avg_temp_c', 'rainfall_mm', 'humidity_pct', 'rodent_abundance_index', 'densidad_poblacional']
@@ -60,6 +87,7 @@ def entrenar_modelos(datos):
     acc_rf = accuracy_score(y_test, rf_pred)
     rf_cm = confusion_matrix(y_test, rf_pred, labels=rf.classes_)
     rf_rep = classification_report(y_test, rf_pred, output_dict=True)
+    rf_probs = rf.predict_proba(X_test) # Necesario para ROC
     
     # XGBoost
     xgb = XGBClassifier(n_estimators=100, learning_rate=0.1, max_depth=5, random_state=42)
@@ -68,15 +96,17 @@ def entrenar_modelos(datos):
     acc_xgb = accuracy_score(y_test_enc, xgb_pred)
     xgb_cm = confusion_matrix(y_test_enc, xgb_pred, labels=le.transform(le.classes_))
     xgb_rep = classification_report(y_test_enc, xgb_pred, target_names=le.classes_, output_dict=True)
+    xgb_probs = xgb.predict_proba(X_test) # Necesario para ROC
 
     # Prophet
     df_p = datos.groupby('year')['confirmed_cases'].sum().reset_index().rename(columns={'year':'ds', 'confirmed_cases':'y'})
     df_p['ds'] = pd.to_datetime(df_p['ds'], format='%Y')
     m_prophet = Prophet().fit(df_p)
     
-    return rf, xgb, le, acc_rf, acc_xgb, rf_cm, xgb_cm, rf_rep, xgb_rep, m_prophet, features, X_test, y_test
+    return rf, xgb, le, acc_rf, acc_xgb, rf_cm, xgb_cm, rf_rep, xgb_rep, m_prophet, features, X_test, y_test, y_test_enc, rf_probs, xgb_probs
 
-rf_model, xgb_model, label_encoder, acc_rf, acc_xgb, rf_cm, xgb_cm, rf_rep, xgb_rep, prophet_model, rf_features, X_test_df, y_test_real = entrenar_modelos(df)
+# Desempaquetar todas las variables devueltas
+rf_model, xgb_model, label_encoder, acc_rf, acc_xgb, rf_cm, xgb_cm, rf_rep, xgb_rep, prophet_model, rf_features, X_test_df, y_test_real, y_test_enc, rf_probs, xgb_probs = entrenar_modelos(df)
 
 # ==========================================
 # INTERFAZ CRISP-DM
@@ -90,7 +120,9 @@ fase = st.sidebar.radio("Navegación del Proyecto:", [
     "4. Deployment (Proyección Temporal)"
 ])
 
+# ------------------------------------------
 # FASE 1: Exploración de Datos
+# ------------------------------------------
 if fase == "1. Data Understanding (Exploración)":
     st.header("📊 Fase 1: Comprensión y Procesamiento de Datos")
     st.write("Análisis exploratorio de las variables climáticas y su relación con los casos de Hantavirus.")
@@ -98,37 +130,39 @@ if fase == "1. Data Understanding (Exploración)":
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("Matriz de Correlación Climática")
-        corr_matrix = df[rf_features + ['confirmed_cases']].corr()
+        df_corr = df[rf_features + ['confirmed_cases']].rename(columns=NOMBRES_CORTOS)
+        corr_matrix = df_corr.corr()
         fig_corr = px.imshow(corr_matrix, text_auto=".2f", aspect="auto", color_continuous_scale='RdBu_r', origin='lower')
-        st.plotly_chart(fig_corr, width="stretch")
+        fig_corr.update_layout(margin=dict(l=10, r=10, t=30, b=10))
+        st.plotly_chart(fig_corr, use_container_width=True, config={'displayModeBar': False})
+        st.info("**Interpretación de la Matriz:** Los valores cercanos a 1 (rojo) indican una correlación positiva fuerte. Se observa que el *Índice de Roedores* y la *Precipitación* tienen el mayor impacto directo en los casos confirmados. Biológicamente, mayor lluvia genera más vegetación, lo que eleva la población del roedor reservorio.")
     
     with col2:
         st.subheader("Distribución Histórica de Casos")
         fig_hist = px.histogram(df, x='confirmed_cases', nbins=30, color='Nivel_Riesgo', title="Frecuencia de Brotes por Nivel de Riesgo")
-        st.plotly_chart(fig_hist, width="stretch")
+        fig_hist.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.4, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=30, b=10))
+        st.plotly_chart(fig_hist, use_container_width=True, config={'displayModeBar': False})
+        st.info("**Interpretación del Histograma:** Muestra el desbalance natural de la carga epidemiológica. La gran mayoría de los registros históricos caen en riesgo 'Bajo', siendo los brotes 'Altos' eventos anómalos. Esto justifica el uso de algoritmos de Machine Learning robustos como XGBoost para capturar estas excepciones.")
         
     st.subheader("Muestra del Dataset Consolidado")
     st.dataframe(df.tail(15), use_container_width=True)
 
+# ------------------------------------------
 # FASE 2: Modelado (Simulador)
+# ------------------------------------------
 elif fase == "2. Modeling (Entrenamiento y Simulación)":
     st.header("⚙️ Fase 2: Modelado Predictivo Post-Entrenamiento")
     
     st.subheader("🌍 Zonas Críticas y Geografía del Riesgo")
-    
-    # --- NUEVO FILTRO PARA VERIFICAR LOS DATOS INYECTADOS ---
     años_disponibles = sorted(df['year'].unique().tolist())
     año_seleccionado = st.selectbox("Filtrar mapa por año (Selecciona 2026 para ver la data inyectada):", ["Ver todos los años"] + años_disponibles)
     
-    if año_seleccionado == "Ver todos los años":
-        df_mapa = df
-    else:
-        df_mapa = df[df['year'] == año_seleccionado]
+    df_mapa = df if año_seleccionado == "Ver todos los años" else df[df['year'] == año_seleccionado]
         
     fig_map = px.scatter_geo(df_mapa, lat='latitude', lon='longitude', color='Nivel_Riesgo', size='confirmed_cases',
                              hover_name='country', color_discrete_map={'Bajo':'green','Medio':'orange','Alto':'red'})
-    st.plotly_chart(fig_map, width="stretch")
-    # --------------------------------------------------------
+    fig_map.update_layout(margin=dict(l=0, r=0, t=0, b=0), legend=dict(orientation="h", y=-0.2, xanchor="center", x=0.5))
+    st.plotly_chart(fig_map, use_container_width=True, config={'displayModeBar': False})
     
     st.divider()
     c1, c2 = st.columns([1, 1])
@@ -153,63 +187,131 @@ elif fase == "2. Modeling (Entrenamiento y Simulación)":
             clases = label_encoder.classes_
         
         st.success(f"Nivel de Riesgo Calculado: **{res.upper()}**")
-        
         for cl, pr in zip(clases, probs):
             st.progress(float(pr), text=f"{cl}: {pr:.1%}")
 
     with c2:
         st.subheader(f"Importancia de Variables ({modelo_elegido})")
-        if modelo_elegido == "Random Forest":
-            pesos = rf_model.feature_importances_
-        else:
-            pesos = xgb_model.feature_importances_
-            
-        importancia = pd.DataFrame({'Variable': rf_features, 'Peso': pesos}).sort_values('Peso')
+        pesos = rf_model.feature_importances_ if modelo_elegido == "Random Forest" else xgb_model.feature_importances_
+        importancia = pd.DataFrame({'Variable': [NOMBRES_CORTOS[f] for f in rf_features], 'Peso': pesos}).sort_values('Peso')
         fig_bar = px.bar(importancia, x='Peso', y='Variable', orientation='h', color='Peso', color_continuous_scale='Blues')
-        st.plotly_chart(fig_bar, width="stretch")
+        fig_bar.update_layout(margin=dict(l=10, r=10, t=30, b=10))
+        st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
+        st.info(f"**Interpretación de Importancia:** Refleja la lógica interna de la IA. El modelo determina matemáticamente que la variable superior es el principal detonante para clasificar un brote de Hantavirus, mientras que las variables inferiores tienen menor peso en la decisión.")
 
-# FASE 3: Evaluación de Métricas
+# ------------------------------------------
+# FASE 3: Evaluación (ROC, AUC y Tabla)
+# ------------------------------------------
 elif fase == "3. Evaluation (Métricas y Rendimiento)":
-    st.header("⚖️ Fase 3: Evaluación y Tablas de Métricas")
+    st.header("⚖️ Fase 3: Evaluación y Validación Científica")
     
-    st.subheader("📋 Resultados de Predicción (Ground Truth vs Machine Learning)")
-    st.write("Esta tabla muestra los datos separados para evaluación (20% del dataset). Compara el riesgo real que ocurrió frente a lo que predijeron nuestros modelos entrenados.")
+    # --- 1. TABLA DE PREDICCIÓN ---
+    st.subheader("📋 Tabla de Predicción (Ground Truth vs Inteligencia Artificial)")
+    st.write("Datos separados para evaluación (20% del dataset) nunca antes vistos por el modelo.")
     
-    df_predicciones = X_test_df.copy()
-    df_predicciones.insert(0, 'RIESGO REAL', y_test_real.values) 
-    df_predicciones.insert(1, 'Predicción Random Forest', rf_model.predict(X_test_df))
-    df_predicciones.insert(2, 'Predicción XGBoost', label_encoder.inverse_transform(xgb_model.predict(X_test_df)))
+    df_predicciones = X_test_df.copy().head(15) # Muestra los primeros 15 casos
+    df_predicciones.insert(0, 'RIESGO REAL', y_test_real.values[:15]) 
+    df_predicciones.insert(1, 'Predicción Random Forest', rf_model.predict(X_test_df)[:15])
+    df_predicciones.insert(2, 'Predicción XGBoost', label_encoder.inverse_transform(xgb_model.predict(X_test_df))[:15])
     
     def color_aciertos(row):
         colores = ['' for _ in row.index]
         for i, col in enumerate(row.index):
             if col in ['Predicción Random Forest', 'Predicción XGBoost']:
                 if row[col] == row['RIESGO REAL']:
-                    colores[i] = 'background-color: rgba(40, 167, 69, 0.3)' 
+                    colores[i] = 'background-color: rgba(40, 167, 69, 0.3)' # Verde (Acierto)
                 else:
-                    colores[i] = 'background-color: rgba(220, 53, 69, 0.3)' 
+                    colores[i] = 'background-color: rgba(220, 53, 69, 0.3)' # Rojo (Fallo)
         return colores
 
     st.dataframe(df_predicciones.style.apply(color_aciertos, axis=1), use_container_width=True)
+    st.info("**Interpretación de la Tabla:** Contrasta el 'Riesgo Real' histórico contra la estimación del algoritmo a ciegas. Las celdas verdes representan aciertos exactos de la IA. Un alto volumen de celdas verdes valida que el modelo detectó correctamente los patrones climáticos que ocasionaron el brote.")
+
     st.divider()
 
+    # --- 1.5. EXACTITUD GLOBAL (Accuracy) ---
     st.subheader("Tabla Resumen de Exactitud (Accuracy)")
     bench_df = pd.DataFrame({'Algoritmo': ['Random Forest', 'XGBoost'], 'Exactitud Global': [acc_rf, acc_xgb]})
-    st.plotly_chart(px.bar(bench_df, x='Algoritmo', y='Exactitud Global', color='Algoritmo', text_auto='.2%'), width="stretch")
-    
+    fig_acc = px.bar(bench_df, x='Algoritmo', y='Exactitud Global', color='Algoritmo', text_auto='.2%')
+    fig_acc.update_layout(yaxis_range=[0, 1], margin=dict(l=10, r=10, t=30, b=10))
+    st.plotly_chart(fig_acc, use_container_width=True, config={'displayModeBar': False})
+    st.info("**Interpretación de Exactitud:** Representa el porcentaje total de predicciones correctas sobre el conjunto de pruebas. Es un buen indicador general del desempeño del modelo.")
+
     st.divider()
-    st.subheader("Matrices de Confusión")
+
+    # --- 2. GRÁFICOS ROC Y AUC ---
+    st.subheader("📈 Comparativa de Modelos: Curva ROC y Área Bajo la Curva (AUC)")
+    
+    # Binarizar las etiquetas para cálculo ROC Multiclase (Promedio Macro)
+    y_test_bin = label_binarize(y_test_enc, classes=[0, 1, 2])
+    fpr_grid = np.linspace(0.0, 1.0, 100)
+    n_classes = len(label_encoder.classes_)
+    
+    # Matemáticas para unificar las 3 clases en 1 sola curva (Random Forest)
+    mean_tpr_rf = np.zeros_like(fpr_grid)
+    for i in range(n_classes):
+        fpr, tpr, _ = roc_curve(y_test_bin[:, i], rf_probs[:, i])
+        mean_tpr_rf += np.interp(fpr_grid, fpr, tpr)
+    mean_tpr_rf /= n_classes
+    auc_rf_macro = auc(fpr_grid, mean_tpr_rf)
+    
+    # Matemáticas para unificar las 3 clases en 1 sola curva (XGBoost)
+    mean_tpr_xgb = np.zeros_like(fpr_grid)
+    for i in range(n_classes):
+        fpr, tpr, _ = roc_curve(y_test_bin[:, i], xgb_probs[:, i])
+        mean_tpr_xgb += np.interp(fpr_grid, fpr, tpr)
+    mean_tpr_xgb /= n_classes
+    auc_xgb_macro = auc(fpr_grid, mean_tpr_xgb)
+    
+    c_roc1, c_roc2 = st.columns(2)
+    
+    # Curva ROC Comparativa
+    with c_roc1:
+        fig_roc = go.Figure()
+        fig_roc.add_trace(go.Scatter(x=fpr_grid, y=mean_tpr_xgb, mode='lines', name='XGBoost', line=dict(color='navy', width=3)))
+        fig_roc.add_trace(go.Scatter(x=fpr_grid, y=mean_tpr_rf, mode='lines', name='Random Forest', line=dict(color='gold', width=3)))
+        fig_roc.add_trace(go.Scatter(x=[0,1], y=[0,1], mode='lines', line=dict(dash='dash', color='crimson', width=2), name='Clasificador Aleatorio'))
+        
+        fig_roc.update_layout(title="Curva ROC Global", xaxis_title="Tasa de Falsos Positivos", yaxis_title="Sensibilidad", legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=40, b=10))
+        st.plotly_chart(fig_roc, use_container_width=True, config={'displayModeBar': False})
+
+    # Gráfico del AUC del Ganador
+    with c_roc2:
+        mejor_auc = max(auc_rf_macro, auc_xgb_macro)
+        if mejor_auc == auc_xgb_macro:
+            tpr_ganador, nombre_ganador, color_area, color_linea = mean_tpr_xgb, "XGBoost", "rgba(30, 144, 255, 0.4)", "navy"
+        else:
+            tpr_ganador, nombre_ganador, color_area, color_linea = mean_tpr_rf, "Random Forest", "rgba(255, 215, 0, 0.4)", "gold"
+            
+        fig_auc = go.Figure()
+        fig_auc.add_trace(go.Scatter(x=fpr_grid, y=tpr_ganador, mode='lines', fill='tozeroy', fillcolor=color_area, name=f'Área {nombre_ganador} (AUC = {mejor_auc:.3f})', line=dict(color=color_linea, width=3)))
+        fig_auc.add_trace(go.Scatter(x=[0,1], y=[0,1], mode='lines', line=dict(dash='dash', color='gray', width=2), name='Referencia (0.5)'))
+        
+        fig_auc.update_layout(title="Modelo Óptimo: Área Bajo la Curva", xaxis_title="Tasa de Falsos Positivos", yaxis_title="Sensibilidad", legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=40, b=10))
+        st.plotly_chart(fig_auc, use_container_width=True, config={'displayModeBar': False})
+
+    st.success(f"**Interpretación ROC/AUC:** El gráfico ROC (izquierdo) evalúa qué algoritmo diferencia mejor los niveles de riesgo sin emitir falsas alarmas. La línea más abombada hacia la esquina superior izquierda es la mejor. El gráfico AUC (derecho) certifica que **{nombre_ganador}** es el modelo matemáticamente superior, logrando un área de **{mejor_auc:.3f}** (siendo 1.0 la clasificación perfecta).")
+
+    st.divider()
+
+    # --- 3. MATRICES DE CONFUSIÓN ---
+    st.subheader("Matrices de Confusión Detalladas")
     c_mat1, c_mat2 = st.columns(2)
     with c_mat1:
         st.write("**Random Forest**")
         fig_cm_rf = px.imshow(rf_cm, text_auto=True, x=rf_model.classes_, y=rf_model.classes_, labels=dict(x="Predicción", y="Realidad"), color_continuous_scale='Blues')
-        st.plotly_chart(fig_cm_rf, width="stretch")
+        fig_cm_rf.update_layout(margin=dict(l=10, r=10, t=10, b=10))
+        st.plotly_chart(fig_cm_rf, use_container_width=True, config={'displayModeBar': False})
     with c_mat2:
         st.write("**XGBoost**")
         fig_cm_xgb = px.imshow(xgb_cm, text_auto=True, x=label_encoder.classes_, y=label_encoder.classes_, labels=dict(x="Predicción", y="Realidad"), color_continuous_scale='Oranges')
-        st.plotly_chart(fig_cm_xgb, width="stretch")
+        fig_cm_xgb.update_layout(margin=dict(l=10, r=10, t=10, b=10))
+        st.plotly_chart(fig_cm_xgb, use_container_width=True, config={'displayModeBar': False})
+    st.info("**Interpretación de las Matrices:** La diagonal de colores oscuros representa los aciertos, donde la predicción coincide con la realidad. Los valores fuera de la diagonal muestran en qué clases se confunde el modelo (falsos positivos/negativos).")
 
     st.divider()
+
+    # --- 4. MÉTRICAS DETALLADAS (Precision, Recall, F1) ---
     st.subheader("Tabla de Métricas Detalladas (Precision, Recall, F1-Score)")
     c_rep1, c_rep2 = st.columns(2)
     with c_rep1:
@@ -218,22 +320,36 @@ elif fase == "3. Evaluation (Métricas y Rendimiento)":
     with c_rep2:
         st.write("**Métricas XGBoost**")
         st.dataframe(pd.DataFrame(xgb_rep).transpose().style.format("{:.2f}").background_gradient(cmap='Oranges'), use_container_width=True)
+    st.info("**Interpretación de Métricas:** Desglosa el desempeño por clase de riesgo. El 'Recall' mide qué proporción de brotes reales el modelo logró capturar, mientras que la 'Precisión' mide cuántas de sus alertas fueron correctas. El 'F1-Score' equilibra ambos valores.")
 
+# ------------------------------------------
 # FASE 4: Proyección
+# ------------------------------------------
 else:
-    st.header("🚀 Fase 4: Despliegue y Proyección (Prophet)")
+    st.header("🚀 Fase 4: Despliegue y Proyección Temporal (Prophet)")
     años = st.slider("Años a proyectar en el futuro:", 1, 10, 5)
     fut = prophet_model.make_future_dataframe(periods=años, freq='YS')
     pred = prophet_model.predict(fut)
     
-    # --- AQUI ESTÁ EL CAMBIO DE LAS ETIQUETAS (LABELS) ---
-    fig_p = px.line(pred, x='ds', y='yhat', 
-                    title="Curva de Casos Históricos y Predicción de Tendencia",
-                    labels={'ds': 'Año de Proyección', 'yhat': 'Casos Proyectados (Tendencia)'})
-    # -----------------------------------------------------
+    fig_p = px.line(pred, x='ds', y='yhat', title="Curva de Casos Históricos y Predicción de Tendencia")
     
-    fig_p.add_scatter(x=pred['ds'], y=pred['yhat_upper'], mode='lines', line=dict(width=0), showlegend=False)
-    fig_p.add_scatter(x=pred['ds'], y=pred['yhat_lower'], mode='lines', fill='tonexty', line=dict(width=0), showlegend=False, name="Margen de Error")
-    st.plotly_chart(fig_p, width="stretch")
+    # Mantenemos las etiquetas originales para que Prophet no se confunda, 
+    # pero actualizamos los títulos del hoverbox (recuadro blanco)
+    fig_p.update_traces(hovertemplate='<b>%{x|%b %Y}</b><br>Casos Estimados: %{y:.0f}<extra></extra>')
     
-    st.write("Esta proyección utiliza el algoritmo aditivo Prophet para estimar la carga epidemiológica futura basada en estacionalidad.")
+    fig_p.add_scatter(x=pred['ds'], y=pred['yhat_upper'], mode='lines', line=dict(width=0), showlegend=False, hoverinfo='skip')
+    fig_p.add_scatter(x=pred['ds'], y=pred['yhat_lower'], mode='lines', fill='tonexty', line=dict(width=0), showlegend=False, name="Margen de Error", hoverinfo='skip')
+    
+    # Forzamos a que aparezca el recuadro blanco clásico y bloqueamos el zoom táctil
+    fig_p.update_layout(
+        xaxis_title="Año de Proyección",
+        yaxis_title="Casos Proyectados",
+        dragmode=False,
+        xaxis=dict(fixedrange=True),
+        yaxis=dict(fixedrange=True),
+        margin=dict(l=10, r=10, t=40, b=10)
+    )
+    
+    st.plotly_chart(fig_p, use_container_width=True, config={'displayModeBar': False})
+    
+    st.info("**Interpretación de la Proyección:** Este modelo (Facebook Prophet) proyecta la carga epidemiológica futura evaluando los componentes aditivos de estacionalidad. La línea central dictamina la tendencia esperada de nuevos casos de Hantavirus, mientras que el área sombreada delimita los límites superior e inferior del margen de error estadístico.")
