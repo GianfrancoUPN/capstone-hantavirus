@@ -208,8 +208,13 @@ elif fase == "2. Modeling (Entrenamiento y Simulación)":
         fig_bar = px.bar(importancia, x='Peso', y='Variable', orientation='h', color='Peso', color_continuous_scale='Blues')
         fig_bar.update_layout(margin=dict(l=10, r=10, t=30, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
         st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
+        
+        # --- EXPLICACIÓN ESPECÍFICA DEL GRÁFICO DE BARRAS AZULES ---
+        st.info("**Interpretación del Motor de Inferencia:** Este gráfico de franjas azules abre la 'caja negra' de la IA. Te muestra qué variables tienen mayor peso matemático al tomar la decisión. La IA actúa como un **Clasificador Multiclase**: evalúa tu configuración de los deslizadores y devuelve una única **etiqueta categórica** de riesgo, dándole prioridad de análisis a la variable que encabeza esta lista.")
 
-    # --- NUEVA EXPLICACIÓN EPIDEMIOLÓGICA DETALLADA ---
+    st.divider()
+    
+    # --- EXPLICACIÓN DE LA DINÁMICA DE CAUSA Y EFECTO ---
     st.info("""**Dinámica Epidemiológica de las Variables (Causa y Efecto):**
 - **Precipitación (Lluvia):** Es el detonante principal. Un aumento en la precipitación genera mayor abundancia de vegetación y semillas, lo que provoca una explosión demográfica en la población de roedores silvestres.
 - **Índice de Roedores:** Representa la cantidad poblacional del reservorio natural del virus. A mayor índice, existe una mayor carga viral liberada en el ambiente a través de sus excretas y saliva.
@@ -243,7 +248,7 @@ elif fase == "3. Evaluation (Métricas y Rendimiento)":
         return colores
 
     st.dataframe(df_predicciones.style.apply(color_aciertos, axis=1), use_container_width=True)
-    st.info("**Aclaración Técnica sobre la Predicción:** El sistema predice una **etiqueta individual de riesgo**. Esta matriz consolida el 20% del dataset que fue separado exclusivamente para pruebas a ciegas (Testing). Compara la 'Etiqueta Real' histórica contra la inferencia de los algoritmos. Las celdas verdes certifican la capacidad de generalización del modelo.")
+    st.info("**Aclaración Técnica sobre la Predicción:** El sistema predice una **etiqueta individual de riesgo**. Esta matriz consolida el 20% del dataset que fue separado exclusivamente para pruebas a ciegas (Testing). Compara la 'Etiqueta Real' histórica contra la inferencia de los algoritmos. Las celdas verdes certifican la capacidad de generalización del modelo. Un alto nivel de aciertos aquí demuestra que el sistema no memorizó los datos (evitando el overfitting), sino que aprendió exitosamente las reglas matemáticas subyacentes de la propagación del virus.")
 
     st.divider()
 
