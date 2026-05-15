@@ -55,9 +55,9 @@ def cargar_datos():
         [(df['confirmed_cases'] <= t1), (df['confirmed_cases'] > t1) & (df['confirmed_cases'] <= t2), (df['confirmed_cases'] > t2)],
         ['Bajo', 'Medio', 'Alto'], default='Bajo'
     )
-    return df
+    return df, t1, t2
 
-df = cargar_datos()
+df, umbral_1, umbral_2 = cargar_datos()
 
 if st.sidebar.button("♻️ Recargar Dataset desde Disco"):
     st.cache_data.clear()
@@ -127,6 +127,18 @@ if fase == "1. Data Understanding (Exploración)":
     st.header("📊 Fase 1: Comprensión y Procesamiento de Datos")
     st.write("Análisis exploratorio de las variables climáticas y su relación con la etiqueta de riesgo de Hantavirus.")
     
+    # --- TABLA DEL DICCIONARIO DE ETIQUETAS ---
+    st.subheader("🏷️ Definición de la Variable Objetivo (Etiqueta a Predecir)")
+    etiquetas_info = pd.DataFrame({
+        'Etiqueta Multiclase': ['Bajo', 'Medio', 'Alto'],
+        'Rango Matemático (Casos)': [f'0 a {int(umbral_1)}', f'{int(umbral_1)+1} a {int(umbral_2)}', f'Mayor a {int(umbral_2)}'],
+        'Interpretación Epidemiológica': ['Transmisión controlada', 'Alerta preventiva por aumento', 'Brote epidemiológico inminente']
+    })
+    st.table(etiquetas_info)
+    st.info("**Aclaración de Etiquetado:** Como el objetivo es predecir la severidad del brote, hemos transformado la variable continua de casos en tres etiquetas categóricas basadas en terciles estadísticos. El sistema de Inteligencia Artificial aprenderá a clasificar directamente en estas tres categorías.")
+    st.divider()
+    # ------------------------------------------
+
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("Matriz de Correlación Climática")
@@ -283,7 +295,7 @@ elif fase == "3. Evaluation (Métricas y Rendimiento)":
         fig_auc.update_layout(title="Modelo Óptimo Seleccionado por Área AUC", xaxis_title="Tasa de Falsos Positivos", yaxis_title="Sensibilidad", legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=40, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
         st.plotly_chart(fig_auc, use_container_width=True, config={'displayModeBar': False})
 
-    st.success(f"**Validación Científica ROC/AUC:** La curva ROC (Receiver Operating Characteristic) ilustra el balance óptimo entre Verdaderos Positivos y Falsas Alarmas a través de los múltiples umbrales de decisión. Visualmente, el clasificador superior es aquel cuya curva se tensa hacia el vértice superior izquierdo. El AUC condensa esto en un indicador absoluto: el algoritmo **{nombre_ganador}** demuestra máxima superioridad probabilística en la tarea de separar las tres etiquetas de riesgo, logrando un AUC consolidado de **{mejor_auc:.3f}**.")
+    st.success(f"**Validación Científica ROC/AUC:** La curva ROC ilustra el balance matemático entre la Sensibilidad (Verdaderos Positivos) y la Tasa de Falsas Alarmas. El AUC condensa esto en un indicador absoluto: el algoritmo **{nombre_ganador}** demuestra máxima superioridad probabilística en la tarea de separar las tres etiquetas de riesgo, logrando un AUC consolidado de **{mejor_auc:.3f}**.")
 
     st.divider()
 
@@ -301,12 +313,7 @@ elif fase == "3. Evaluation (Métricas y Rendimiento)":
         fig_cm_xgb.update_layout(margin=dict(l=10, r=10, t=10, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
         st.plotly_chart(fig_cm_xgb, use_container_width=True, config={'displayModeBar': False})
     
-    st.info("""**Análisis Diagnóstico de Errores Críticos:** Esta herramienta matricial es fundamental para la toma de decisiones. Desglosa la naturaleza del error de la IA. La diagonal coloreada certifica las predicciones correctas, pero nuestra atención ingenieril debe ir a los valores fuera de la diagonal:
-    
-- **Falsos Negativos:** Predecir riesgo 'Bajo' cuando en realidad el brote fue 'Alto'. Este es el error más letal, ya que deja desprotegidas a comunidades vulnerables frente al Hantavirus.
-- **Falsos Positivos:** Generar alarmas 'Altas' cuando el riesgo era 'Bajo', lo que derivaría en un gasto logístico e intervenciones innecesarias para el sistema de salud. 
-
-Minimizar los falsos negativos justifica la efectividad de la arquitectura IA propuesta.""")
+    st.info("**Análisis Diagnóstico de Errores Críticos:** Esta herramienta matricial desglosa la naturaleza del error de la IA. La diagonal coloreada certifica las predicciones correctas. Los números fuera del eje nos revelan el tipo de error crítico para vigilancia de salud: evaluar si el modelo subestimó un brote alto (falso negativo) o generó una falsa alarma innecesaria.")
 
     st.divider()
 
@@ -320,10 +327,7 @@ Minimizar los falsos negativos justifica la efectividad de la arquitectura IA pr
         st.write("**Métricas XGBoost**")
         st.dataframe(pd.DataFrame(xgb_rep).transpose().style.format("{:.2f}").background_gradient(cmap='Oranges'), use_container_width=True)
     
-    st.info("""**Desempeño en Clases Específicas:** Extraemos el rendimiento detallado requerido para la auditoría técnica del negocio:
-- **Recall (Sensibilidad):** La métrica reina en proyectos médicos. Indica qué porcentaje de los brotes graves históricos la IA logró interceptar a tiempo.
-- **Precision (Precisión):** Define la confiabilidad de la alerta. De todas las veces que la IA declaró "Riesgo Alto", ¿cuántas fue verdad?
-- **F1-Score:** El promedio armónico que asegura que el modelo no esté favoreciendo el Recall a costa de destruir la Precisión.""")
+    st.info("**Desempeño en Clases Específicas:** Extraemos las métricas intrínsecas para la validación del experto del negocio. Destaca la métrica *Recall*, ya que penaliza fuertemente a la IA si no logra detectar o etiqueta erróneamente los verdaderos brotes históricos. El *F1-Score* nos confirma un equilibrio matemático sano y previene el sobreajuste (overfitting).")
 
 # ------------------------------------------
 # FASE 4: Proyección
@@ -334,6 +338,16 @@ else:
     fut = prophet_model.make_future_dataframe(periods=años, freq='YS')
     pred = prophet_model.predict(fut)
     
+    # --- TABLA DE PREDICCIONES FUTURAS ---
+    st.subheader("📋 Tabla de Valores Proyectados a Futuro")
+    df_proyeccion = pred[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].tail(años).copy()
+    df_proyeccion['ds'] = df_proyeccion['ds'].dt.year
+    df_proyeccion.columns = ['Año Proyectado', 'Casos Estimados', 'Mínimo Esperado (Optimista)', 'Máximo Esperado (Pesimista)']
+    st.dataframe(df_proyeccion.style.format({'Casos Estimados': '{:.0f}', 'Mínimo Esperado (Optimista)': '{:.0f}', 'Máximo Esperado (Pesimista)': '{:.0f}'}), use_container_width=True)
+    st.info("**Detalle Tabular:** Respondiendo a los requerimientos de auditoría, esta tabla muestra los valores crudos numéricos exactos que el algoritmo aditivo Prophet está previendo para la ventana de tiempo seleccionada, antes de ser graficados.")
+    st.divider()
+    # -------------------------------------
+
     fig_p = px.line(pred, x='ds', y='yhat', title="Evolución Histórica y Estimación Continua de Tendencia")
     
     fig_p.update_traces(hovertemplate='<b>%{x|%b %Y}</b><br>Estimación de Casos: %{y:.0f}<extra></extra>')
@@ -352,9 +366,4 @@ else:
     
     st.plotly_chart(fig_p, use_container_width=True, config={'displayModeBar': False})
     
-    st.info("""**Fundamento del Algoritmo Proyectivo:** Es fundamental hacer la distinción técnica ante el jurado: A diferencia de los modelos de las Fases 2 y 3 (que actuaban como Clasificadores discretos para asignar una etiqueta), aquí cambiamos de paradigma e implementamos el **Modelo Aditivo Generalizado (GAM)** desarrollado por Meta, conocido como Prophet.
-
-Esta arquitectura matemática está diseñada exclusivamente para modelar **Series de Tiempo**, lo que significa que su output ya no es una etiqueta, sino una **variable continua (una proyección numérica de infectados)** a futuro. 
-
-- **La línea central** traza la evolución tendencial absorbiendo y suavizando las fluctuaciones de años anteriores.
-- **La franja sombreada** representa el intervalo de confianza (el margen estadístico de error). La amplitud geométrica de esta franja le otorga a las autoridades de salud un rango probabilístico para desplegar recursos económicos y camas de hospital contemplando siempre el escenario más adverso (límite superior).""")
+    st.info("**Fundamento del Algoritmo Proyectivo:** Es vital destacar que a diferencia de los modelos anteriores (que asignaban una etiqueta categórica), aquí aplicamos el **Modelo Aditivo Generalizado (GAM)** conocido como Prophet. Esta arquitectura modela **Series de Tiempo**, devolviendo un valor numérico continuo. Extrae la tendencia subyacente de la carga histórica y proyecta el volumen de casos a futuro, blindado por una franja sombreada que delimita matemáticamente el rango de incertidumbre estadístico.")
