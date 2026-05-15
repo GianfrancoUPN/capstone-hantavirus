@@ -87,7 +87,7 @@ def entrenar_modelos(datos):
     acc_rf = accuracy_score(y_test, rf_pred)
     rf_cm = confusion_matrix(y_test, rf_pred, labels=rf.classes_)
     rf_rep = classification_report(y_test, rf_pred, output_dict=True)
-    rf_probs = rf.predict_proba(X_test) # Necesario para ROC
+    rf_probs = rf.predict_proba(X_test)
     
     # XGBoost
     xgb = XGBClassifier(n_estimators=100, learning_rate=0.1, max_depth=5, random_state=42)
@@ -96,7 +96,7 @@ def entrenar_modelos(datos):
     acc_xgb = accuracy_score(y_test_enc, xgb_pred)
     xgb_cm = confusion_matrix(y_test_enc, xgb_pred, labels=le.transform(le.classes_))
     xgb_rep = classification_report(y_test_enc, xgb_pred, target_names=le.classes_, output_dict=True)
-    xgb_probs = xgb.predict_proba(X_test) # Necesario para ROC
+    xgb_probs = xgb.predict_proba(X_test)
 
     # Prophet
     df_p = datos.groupby('year')['confirmed_cases'].sum().reset_index().rename(columns={'year':'ds', 'confirmed_cases':'y'})
@@ -105,7 +105,6 @@ def entrenar_modelos(datos):
     
     return rf, xgb, le, acc_rf, acc_xgb, rf_cm, xgb_cm, rf_rep, xgb_rep, m_prophet, features, X_test, y_test, y_test_enc, rf_probs, xgb_probs
 
-# Desempaquetar todas las variables devueltas
 rf_model, xgb_model, label_encoder, acc_rf, acc_xgb, rf_cm, xgb_cm, rf_rep, xgb_rep, prophet_model, rf_features, X_test_df, y_test_real, y_test_enc, rf_probs, xgb_probs = entrenar_modelos(df)
 
 # ==========================================
@@ -137,7 +136,6 @@ if fase == "1. Data Understanding (Exploración)":
     st.table(etiquetas_info)
     st.info("**Aclaración de Etiquetado:** Como el objetivo es predecir la severidad del brote, hemos transformado la variable continua de casos en tres etiquetas categóricas basadas en terciles estadísticos. El sistema de Inteligencia Artificial aprenderá a clasificar directamente en estas tres categorías.")
     st.divider()
-    # ------------------------------------------
 
     col1, col2 = st.columns(2)
     with col1:
@@ -147,14 +145,14 @@ if fase == "1. Data Understanding (Exploración)":
         fig_corr = px.imshow(corr_matrix, text_auto=".2f", aspect="auto", color_continuous_scale='RdBu_r', origin='lower')
         fig_corr.update_layout(margin=dict(l=10, r=10, t=30, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
         st.plotly_chart(fig_corr, use_container_width=True, config={'displayModeBar': False})
-        st.info("**Análisis de la Matriz:** Esta matriz evalúa el nivel de dependencia lineal entre las características del dataset. Los valores cercanos a 1 (color rojo oscuro) indican una fuerte dependencia matemática. Para nuestro modelo predictivo, validamos que la *Precipitación* y el *Índice de Roedores* son las variables independientes que más impactan en el aumento de casos. Biológicamente, mayores precipitaciones incrementan la masa vegetal, asegurando la disponibilidad de alimento y refugio para el roedor reservorio, lo que eleva el contacto humano-virus.")
+        st.info("**Análisis de la Matriz:** Esta matriz evalúa el nivel de dependencia lineal entre las características del dataset. Los valores cercanos a 1 (color rojo oscuro) indican una fuerte dependencia matemática. Para nuestro modelo predictivo, validamos que la *Precipitación* y el *Índice de Roedores* son las variables independientes que más impactan en el aumento de casos.")
     
     with col2:
         st.subheader("Distribución Histórica (Variable Objetivo)")
         fig_hist = px.histogram(df, x='confirmed_cases', nbins=30, color='Nivel_Riesgo', title="Frecuencia de las Etiquetas a Predecir")
         fig_hist.update_layout(legend=dict(title="Etiqueta de Riesgo", orientation="h", yanchor="bottom", y=-0.4, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=30, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
         st.plotly_chart(fig_hist, use_container_width=True, config={'displayModeBar': False})
-        st.info("**Análisis del Histograma:** Aquí definimos qué es lo que el modelo va a aprender. Hemos categorizado la cantidad de casos continuos en tres **etiquetas de clase: Bajo, Medio y Alto**. El gráfico demuestra un claro sesgo en la distribución de la data (imbalanced dataset): predominan los eventos de riesgo Bajo. Esto justifica técnicamente la aplicación de ensambles avanzados como XGBoost, que manejan mejor este desbalance para clasificar correctamente los brotes de alto riesgo (eventos anómalos).")
+        st.info("**Análisis del Histograma:** El gráfico demuestra un claro sesgo en la distribución de la data (imbalanced dataset): predominan los eventos de riesgo Bajo. Esto justifica técnicamente la aplicación de ensambles avanzados como XGBoost, que manejan mejor este desbalance para clasificar correctamente los brotes de alto riesgo.")
         
     st.subheader("Muestra del Dataset Consolidado")
     st.dataframe(df.tail(15), use_container_width=True)
@@ -210,7 +208,16 @@ elif fase == "2. Modeling (Entrenamiento y Simulación)":
         fig_bar = px.bar(importancia, x='Peso', y='Variable', orientation='h', color='Peso', color_continuous_scale='Blues')
         fig_bar.update_layout(margin=dict(l=10, r=10, t=30, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
         st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
-        st.info("**Interpretación del Motor de Inferencia:** Este simulador demuestra cómo operan los modelos por debajo. La IA no predice una tabla entera de casos; actúa como un **Clasificador Multiclase**. Recibe el vector de variables climáticas configurado en los deslizadores y devuelve una única **etiqueta categórica** (Bajo, Medio o Alto). El gráfico de barras explica qué características determinaron la asignación de esa etiqueta específica.")
+
+    # --- NUEVA EXPLICACIÓN EPIDEMIOLÓGICA DETALLADA ---
+    st.info("""**Dinámica Epidemiológica de las Variables (Causa y Efecto):**
+- **Precipitación (Lluvia):** Es el detonante principal. Un aumento en la precipitación genera mayor abundancia de vegetación y semillas, lo que provoca una explosión demográfica en la población de roedores silvestres.
+- **Índice de Roedores:** Representa la cantidad poblacional del reservorio natural del virus. A mayor índice, existe una mayor carga viral liberada en el ambiente a través de sus excretas y saliva.
+- **Temperatura:** Regula los ciclos de reproducción del roedor y la supervivencia del virus fuera del huésped. Temperaturas muy extremas inactivan el virus, mientras que climas templados favorecen su propagación aerotransportada.
+- **Densidad Poblacional:** Mide la exposición humana. Un alto índice de roedores en un bosque deshabitado no genera un brote pandémico; pero si la densidad humana aumenta cerca de esos hábitats (ej. zonas agrícolas o urbanización descontrolada), el riesgo de contagio cruzado se dispara.
+
+**¿Por qué la IA cambia el riesgo a ALTO, MEDIO o BAJO?**
+El algoritmo no adivina; ha internalizado matemáticamente las reglas biológicas mencionadas. Si en el simulador configuras lluvias torrenciales, un alto índice de roedores y alta densidad humana, la IA detecta inmediatamente las condiciones perfectas para la transmisión humano-virus, cambiando la etiqueta a **ALTO**. Por el contrario, la sequía o la ausencia de roedores desplomará la probabilidad a **BAJO**.""")
 
 # ------------------------------------------
 # FASE 3: Evaluación (ROC, AUC y Tabla)
@@ -218,7 +225,6 @@ elif fase == "2. Modeling (Entrenamiento y Simulación)":
 elif fase == "3. Evaluation (Métricas y Rendimiento)":
     st.header("⚖️ Fase 3: Evaluación y Validación Científica")
     
-    # --- 1. TABLA DE PREDICCIÓN ---
     st.subheader("📋 Auditoría de Predicciones: Etiquetas Reales vs. IA")
     
     df_predicciones = X_test_df.copy().head(15) 
@@ -231,27 +237,25 @@ elif fase == "3. Evaluation (Métricas y Rendimiento)":
         for i, col in enumerate(row.index):
             if col in ['Clasificación Random Forest', 'Clasificación XGBoost']:
                 if row[col] == row['ETIQUETA REAL']:
-                    colores[i] = 'background-color: rgba(40, 167, 69, 0.3)' # Verde (Acierto)
+                    colores[i] = 'background-color: rgba(40, 167, 69, 0.3)' 
                 else:
-                    colores[i] = 'background-color: rgba(220, 53, 69, 0.3)' # Rojo (Fallo)
+                    colores[i] = 'background-color: rgba(220, 53, 69, 0.3)' 
         return colores
 
     st.dataframe(df_predicciones.style.apply(color_aciertos, axis=1), use_container_width=True)
-    st.info("**Aclaración Técnica sobre la Predicción:** El sistema predice una **etiqueta individual de riesgo**. Esta matriz consolida el 20% del dataset que fue separado exclusivamente para pruebas a ciegas (Testing). Compara la 'Etiqueta Real' histórica contra la inferencia de los algoritmos.\n\nLas celdas verdes certifican la capacidad de generalización del modelo. Un alto nivel de aciertos aquí demuestra que el sistema no memorizó los datos (evitando el overfitting), sino que aprendió exitosamente las reglas matemáticas subyacentes de la propagación del virus frente a factores climáticos.")
+    st.info("**Aclaración Técnica sobre la Predicción:** El sistema predice una **etiqueta individual de riesgo**. Esta matriz consolida el 20% del dataset que fue separado exclusivamente para pruebas a ciegas (Testing). Compara la 'Etiqueta Real' histórica contra la inferencia de los algoritmos. Las celdas verdes certifican la capacidad de generalización del modelo.")
 
     st.divider()
 
-    # --- 1.5. EXACTITUD GLOBAL (Accuracy) ---
     st.subheader("Métricas de Rendimiento General")
     bench_df = pd.DataFrame({'Algoritmo': ['Random Forest', 'XGBoost'], 'Exactitud Global': [acc_rf, acc_xgb]})
     fig_acc = px.bar(bench_df, x='Algoritmo', y='Exactitud Global', color='Algoritmo', text_auto='.2%')
     fig_acc.update_layout(yaxis_range=[0, 1], margin=dict(l=10, r=10, t=30, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
     st.plotly_chart(fig_acc, use_container_width=True, config={'displayModeBar': False})
-    st.info("**Análisis de Exactitud (Accuracy):** Mide la proporción de clasificaciones correctas sobre el total de registros evaluados. \n\n*Atención Académica:* En el contexto epidemiológico, el Accuracy actúa solo como un control de calidad primario (Sanity Check). Dado que nuestro dataset está desbalanceado (hay más eventos 'Bajos' que 'Altos'), un modelo rudimentario que siempre prediga 'Bajo' obtendría un Accuracy engañosamente alto, pero fallaría catastróficamente en prevenir una crisis sanitaria. Por esta razón, la validación científica oficial recae sobre las curvas ROC y las matrices de confusión que se muestran a continuación.")
+    st.info("**Análisis de Exactitud (Accuracy):** Mide la proporción de clasificaciones correctas sobre el total de registros evaluados. En el contexto epidemiológico, el Accuracy actúa solo como un control de calidad primario (Sanity Check).")
 
     st.divider()
 
-    # --- 2. GRÁFICOS ROC Y AUC ---
     st.subheader("📈 Comparativa de Modelos: Curva ROC y Área Bajo la Curva (AUC)")
     
     y_test_bin = label_binarize(y_test_enc, classes=[0, 1, 2])
@@ -299,7 +303,6 @@ elif fase == "3. Evaluation (Métricas y Rendimiento)":
 
     st.divider()
 
-    # --- 3. MATRICES DE CONFUSIÓN ---
     st.subheader("Matrices de Confusión de las Etiquetas")
     c_mat1, c_mat2 = st.columns(2)
     with c_mat1:
@@ -313,11 +316,10 @@ elif fase == "3. Evaluation (Métricas y Rendimiento)":
         fig_cm_xgb.update_layout(margin=dict(l=10, r=10, t=10, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
         st.plotly_chart(fig_cm_xgb, use_container_width=True, config={'displayModeBar': False})
     
-    st.info("**Análisis Diagnóstico de Errores Críticos:** Esta herramienta matricial desglosa la naturaleza del error de la IA. La diagonal coloreada certifica las predicciones correctas. Los números fuera del eje nos revelan el tipo de error crítico para vigilancia de salud: evaluar si el modelo subestimó un brote alto (falso negativo) o generó una falsa alarma innecesaria.")
+    st.info("**Análisis Diagnóstico de Errores Críticos:** Esta herramienta matricial desglosa la naturaleza del error de la IA. La diagonal coloreada certifica las predicciones correctas. Los números fuera del eje revelan los falsos positivos y falsos negativos.")
 
     st.divider()
 
-    # --- 4. MÉTRICAS DETALLADAS (Precision, Recall, F1) ---
     st.subheader("Desglose de Efectividad Multiclase (Precision, Recall, F1)")
     c_rep1, c_rep2 = st.columns(2)
     with c_rep1:
@@ -327,7 +329,7 @@ elif fase == "3. Evaluation (Métricas y Rendimiento)":
         st.write("**Métricas XGBoost**")
         st.dataframe(pd.DataFrame(xgb_rep).transpose().style.format("{:.2f}").background_gradient(cmap='Oranges'), use_container_width=True)
     
-    st.info("**Desempeño en Clases Específicas:** Extraemos las métricas intrínsecas para la validación del experto del negocio. Destaca la métrica *Recall*, ya que penaliza fuertemente a la IA si no logra detectar o etiqueta erróneamente los verdaderos brotes históricos. El *F1-Score* nos confirma un equilibrio matemático sano y previene el sobreajuste (overfitting).")
+    st.info("**Desempeño en Clases Específicas:** Extraemos las métricas intrínsecas para la validación. Destaca la métrica *Recall*, ya que penaliza fuertemente a la IA si no logra detectar los verdaderos brotes históricos. El *F1-Score* nos confirma un equilibrio matemático sano.")
 
 # ------------------------------------------
 # FASE 4: Proyección
@@ -338,32 +340,39 @@ else:
     fut = prophet_model.make_future_dataframe(periods=años, freq='YS')
     pred = prophet_model.predict(fut)
     
-    # --- TABLA DE PREDICCIONES FUTURAS ---
+    # --- REDONDEO OBLIGATORIO DE DECIMALES ---
+    pred['yhat'] = pred['yhat'].round()
+    pred['yhat_lower'] = pred['yhat_lower'].round()
+    pred['yhat_upper'] = pred['yhat_upper'].round()
+    
     st.subheader("📋 Tabla de Valores Proyectados a Futuro")
     df_proyeccion = pred[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].tail(años).copy()
     df_proyeccion['ds'] = df_proyeccion['ds'].dt.year
     df_proyeccion.columns = ['Año Proyectado', 'Casos Estimados', 'Mínimo Esperado (Optimista)', 'Máximo Esperado (Pesimista)']
-    st.dataframe(df_proyeccion.style.format({'Casos Estimados': '{:.0f}', 'Mínimo Esperado (Optimista)': '{:.0f}', 'Máximo Esperado (Pesimista)': '{:.0f}'}), use_container_width=True)
-    st.info("**Detalle Tabular:** Respondiendo a los requerimientos de auditoría, esta tabla muestra los valores crudos numéricos exactos que el algoritmo aditivo Prophet está previendo para la ventana de tiempo seleccionada, antes de ser graficados.")
+    
+    # Aplicar formato de miles sin decimales
+    st.dataframe(df_proyeccion.style.format({'Casos Estimados': '{:,.0f}', 'Mínimo Esperado (Optimista)': '{:,.0f}', 'Máximo Esperado (Pesimista)': '{:,.0f}'}), use_container_width=True)
+    st.info("**Detalle Tabular:** Respondiendo a los requerimientos de auditoría, esta tabla muestra los valores enteros exactos que el Modelo Aditivo Generalizado (GAM) Prophet está previendo para la ventana de tiempo seleccionada, antes de ser graficados.")
     st.divider()
-    # -------------------------------------
 
     fig_p = px.line(pred, x='ds', y='yhat', title="Evolución Histórica y Estimación Continua de Tendencia")
     
-    fig_p.update_traces(hovertemplate='<b>%{x|%b %Y}</b><br>Estimación de Casos: %{y:.0f}<extra></extra>')
+    # Forzar la etiqueta flotante a enteros
+    fig_p.update_traces(hovertemplate='<b>%{x|%Y}</b><br>Estimación de Casos: %{y:,.0f}<extra></extra>')
     
     fig_p.add_scatter(x=pred['ds'], y=pred['yhat_upper'], mode='lines', line=dict(width=0), showlegend=False, hoverinfo='skip')
     fig_p.add_scatter(x=pred['ds'], y=pred['yhat_lower'], mode='lines', fill='tonexty', line=dict(width=0), showlegend=False, name="Intervalo de Confianza", hoverinfo='skip')
     
+    # Apagar la abreviación 'k' automática de Plotly en el eje Y
     fig_p.update_layout(
         xaxis_title="Eje Temporal",
         yaxis_title="Volumen Estimado de Casos",
         dragmode=False,
         xaxis=dict(fixedrange=True),
-        yaxis=dict(fixedrange=True),
+        yaxis=dict(fixedrange=True, tickformat=",.0f"),
         margin=dict(l=10, r=10, t=40, b=10)
     )
     
     st.plotly_chart(fig_p, use_container_width=True, config={'displayModeBar': False})
     
-    st.info("**Fundamento del Algoritmo Proyectivo:** Es vital destacar que a diferencia de los modelos anteriores (que asignaban una etiqueta categórica), aquí aplicamos el **Modelo Aditivo Generalizado (GAM)** conocido como Prophet. Esta arquitectura modela **Series de Tiempo**, devolviendo un valor numérico continuo. Extrae la tendencia subyacente de la carga histórica y proyecta el volumen de casos a futuro, blindado por una franja sombreada que delimita matemáticamente el rango de incertidumbre estadístico.")
+    st.info("**Fundamento del Algoritmo Proyectivo:** Es vital destacar que a diferencia de los modelos anteriores (que asignaban una etiqueta categórica), aquí aplicamos el **Modelo Aditivo Generalizado (GAM)** conocido como Prophet. Esta arquitectura modela **Series de Tiempo**, devolviendo un valor numérico continuo (redondeado a enteros de pacientes). Extrae la tendencia subyacente de la carga histórica y proyecta el volumen de casos a futuro, blindado por una franja sombreada que delimita matemáticamente el rango de incertidumbre estadístico.")
