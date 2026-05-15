@@ -144,15 +144,15 @@ if fase == "1. Data Understanding (Exploración)":
         corr_matrix = df_corr.corr()
         fig_corr = px.imshow(corr_matrix, text_auto=".2f", aspect="auto", color_continuous_scale='RdBu_r', origin='lower')
         fig_corr.update_layout(margin=dict(l=10, r=10, t=30, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
-        st.plotly_chart(fig_corr, use_container_width=True, config={'displayModeBar': False})
-        st.info("**Análisis de la Matriz:** Esta matriz evalúa el nivel de dependencia lineal entre las características del dataset. Los valores cercanos a 1 (color rojo oscuro) indican una fuerte dependencia matemática. Para nuestro modelo predictivo, validamos que la *Precipitación* y el *Índice de Roedores* son las variables independientes que más impactan en el aumento de casos.")
+        st.plotly_chart(fig_corr, use_container_width=True)
+        st.info("**Análisis de la Matriz:** Esta matriz evalúa el nivel de dependencia lineal entre las características del dataset. Los valores cercanos a 1 (color rojo oscuro) indican una fuerte dependencia matemática. Para nuestro modelo predictivo, validamos que la *Precipitación* y el *Índice de Roedores* son las variables independientes que más impactan en el aumento de casos. Biológicamente, mayores precipitaciones incrementan la masa vegetal, asegurando la disponibilidad de alimento y refugio para el roedor reservorio, lo que eleva el contacto humano-virus.")
     
     with col2:
         st.subheader("Distribución Histórica (Variable Objetivo)")
         fig_hist = px.histogram(df, x='confirmed_cases', nbins=30, color='Nivel_Riesgo', title="Frecuencia de las Etiquetas a Predecir")
         fig_hist.update_layout(legend=dict(title="Etiqueta de Riesgo", orientation="h", yanchor="bottom", y=-0.4, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=30, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
-        st.plotly_chart(fig_hist, use_container_width=True, config={'displayModeBar': False})
-        st.info("**Análisis del Histograma:** El gráfico demuestra un claro sesgo en la distribución de la data (imbalanced dataset): predominan los eventos de riesgo Bajo. Esto justifica técnicamente la aplicación de ensambles avanzados como XGBoost, que manejan mejor este desbalance para clasificar correctamente los brotes de alto riesgo.")
+        st.plotly_chart(fig_hist, use_container_width=True)
+        st.info("**Análisis del Histograma:** Aquí definimos qué es lo que el modelo va a aprender. Hemos categorizado la cantidad de casos continuos en tres **etiquetas de clase: Bajo, Medio y Alto**. El gráfico demuestra un claro sesgo en la distribución de la data (imbalanced dataset): predominan los eventos de riesgo Bajo. Esto justifica técnicamente la aplicación de ensambles avanzados como XGBoost, que manejan mejor este desbalance para clasificar correctamente los brotes de alto riesgo (eventos anómalos).")
         
     st.subheader("Muestra del Dataset Consolidado")
     st.dataframe(df.tail(15), use_container_width=True)
@@ -172,15 +172,16 @@ elif fase == "2. Modeling (Entrenamiento y Simulación)":
     fig_map = px.scatter_geo(df_mapa, lat='latitude', lon='longitude', color='Nivel_Riesgo', size='confirmed_cases',
                              hover_name='country', color_discrete_map={'Bajo':'green','Medio':'orange','Alto':'red'})
     fig_map.update_layout(margin=dict(l=0, r=0, t=0, b=0), legend=dict(orientation="h", y=-0.2, xanchor="center", x=0.5), dragmode=False)
-    st.plotly_chart(fig_map, use_container_width=True, config={'displayModeBar': False})
+    st.plotly_chart(fig_map, use_container_width=True)
     
     st.divider()
     c1, c2 = st.columns([1, 1])
     with c1:
         st.subheader("Simulador de Inferencia (Clasificación)")
-        temp = st.slider("Temperatura (°C)", 0.0, 40.0, 20.0)
-        lluvia = st.slider("Precipitación (mm)", 0.0, 3000.0, 1000.0)
-        roedores = st.slider("Índice de Roedores", 0.0, 1.0, 0.4)
+        # Sliders modificados a números enteros para mayor claridad (excepto roedores)
+        temp = st.slider("Temperatura (°C)", 0, 40, 20)
+        lluvia = st.slider("Precipitación (mm)", 0, 3000, 1000)
+        roedores = st.slider("Índice de Roedores", 0.0, 1.0, 0.40)
         densidad = st.slider("Densidad Poblacional", 10, 1000, 100)
         
         modelo_elegido = st.radio("Algoritmo de Clasificación:", ["Random Forest", "XGBoost"], horizontal=True)
@@ -207,14 +208,11 @@ elif fase == "2. Modeling (Entrenamiento y Simulación)":
         importancia = pd.DataFrame({'Variable': [NOMBRES_CORTOS[f] for f in rf_features], 'Peso': pesos}).sort_values('Peso')
         fig_bar = px.bar(importancia, x='Peso', y='Variable', orientation='h', color='Peso', color_continuous_scale='Blues')
         fig_bar.update_layout(margin=dict(l=10, r=10, t=30, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
-        st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
-        
-        # --- EXPLICACIÓN ESPECÍFICA DEL GRÁFICO DE BARRAS AZULES ---
+        st.plotly_chart(fig_bar, use_container_width=True)
         st.info("**Interpretación del Motor de Inferencia:** Este gráfico de franjas azules abre la 'caja negra' de la IA. Te muestra qué variables tienen mayor peso matemático al tomar la decisión. La IA actúa como un **Clasificador Multiclase**: evalúa tu configuración de los deslizadores y devuelve una única **etiqueta categórica** de riesgo, dándole prioridad de análisis a la variable que encabeza esta lista.")
 
     st.divider()
-    
-    # --- EXPLICACIÓN DE LA DINÁMICA DE CAUSA Y EFECTO ---
+
     st.info("""**Dinámica Epidemiológica de las Variables (Causa y Efecto):**
 - **Precipitación (Lluvia):** Es el detonante principal. Un aumento en la precipitación genera mayor abundancia de vegetación y semillas, lo que provoca una explosión demográfica en la población de roedores silvestres.
 - **Índice de Roedores:** Representa la cantidad poblacional del reservorio natural del virus. A mayor índice, existe una mayor carga viral liberada en el ambiente a través de sus excretas y saliva.
@@ -248,7 +246,9 @@ elif fase == "3. Evaluation (Métricas y Rendimiento)":
         return colores
 
     st.dataframe(df_predicciones.style.apply(color_aciertos, axis=1), use_container_width=True)
-    st.info("**Aclaración Técnica sobre la Predicción:** El sistema predice una **etiqueta individual de riesgo**. Esta matriz consolida el 20% del dataset que fue separado exclusivamente para pruebas a ciegas (Testing). Compara la 'Etiqueta Real' histórica contra la inferencia de los algoritmos. Las celdas verdes certifican la capacidad de generalización del modelo. Un alto nivel de aciertos aquí demuestra que el sistema no memorizó los datos (evitando el overfitting), sino que aprendió exitosamente las reglas matemáticas subyacentes de la propagación del virus.")
+    st.info("""**Aclaración Técnica sobre la Predicción:** El sistema predice una **etiqueta individual de riesgo**. Esta matriz consolida el 20% del dataset que fue separado exclusivamente para pruebas a ciegas (Testing). Compara la 'Etiqueta Real' histórica contra la inferencia de los algoritmos. 
+    
+Las celdas verdes certifican la capacidad de generalización del modelo. Un alto nivel de aciertos aquí demuestra que el sistema no memorizó los datos (evitando el overfitting), sino que aprendió exitosamente las reglas matemáticas subyacentes de la propagación del virus frente a factores climáticos.""")
 
     st.divider()
 
@@ -256,8 +256,10 @@ elif fase == "3. Evaluation (Métricas y Rendimiento)":
     bench_df = pd.DataFrame({'Algoritmo': ['Random Forest', 'XGBoost'], 'Exactitud Global': [acc_rf, acc_xgb]})
     fig_acc = px.bar(bench_df, x='Algoritmo', y='Exactitud Global', color='Algoritmo', text_auto='.2%')
     fig_acc.update_layout(yaxis_range=[0, 1], margin=dict(l=10, r=10, t=30, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
-    st.plotly_chart(fig_acc, use_container_width=True, config={'displayModeBar': False})
-    st.info("**Análisis de Exactitud (Accuracy):** Mide la proporción de clasificaciones correctas sobre el total de registros evaluados. En el contexto epidemiológico, el Accuracy actúa solo como un control de calidad primario (Sanity Check).")
+    st.plotly_chart(fig_acc, use_container_width=True)
+    st.info("""**Análisis de Exactitud (Accuracy):** Mide la proporción de clasificaciones correctas sobre el total de registros evaluados. 
+
+*Atención Académica:* En el contexto epidemiológico, el Accuracy actúa solo como un control de calidad primario (Sanity Check). Dado que nuestro dataset está desbalanceado (hay más eventos 'Bajos' que 'Altos'), un modelo rudimentario que siempre prediga 'Bajo' obtendría un Accuracy engañosamente alto, pero fallaría catastróficamente en prevenir una crisis sanitaria. Por esta razón, la validación científica oficial recae sobre las curvas ROC y las matrices de confusión que se muestran a continuación.""")
 
     st.divider()
 
@@ -289,7 +291,7 @@ elif fase == "3. Evaluation (Métricas y Rendimiento)":
         fig_roc.add_trace(go.Scatter(x=fpr_grid, y=mean_tpr_rf, mode='lines', name='Random Forest', line=dict(color='gold', width=3)))
         fig_roc.add_trace(go.Scatter(x=[0,1], y=[0,1], mode='lines', line=dict(dash='dash', color='crimson', width=2), name='Clasificador Aleatorio'))
         fig_roc.update_layout(title="Curva ROC Multiclase (Promedio Macro)", xaxis_title="Tasa de Falsos Positivos", yaxis_title="Sensibilidad", legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=40, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
-        st.plotly_chart(fig_roc, use_container_width=True, config={'displayModeBar': False})
+        st.plotly_chart(fig_roc, use_container_width=True)
 
     with c_roc2:
         mejor_auc = max(auc_rf_macro, auc_xgb_macro)
@@ -302,9 +304,11 @@ elif fase == "3. Evaluation (Métricas y Rendimiento)":
         fig_auc.add_trace(go.Scatter(x=fpr_grid, y=tpr_ganador, mode='lines', fill='tozeroy', fillcolor=color_area, name=f'Área {nombre_ganador} (AUC = {mejor_auc:.3f})', line=dict(color=color_linea, width=3)))
         fig_auc.add_trace(go.Scatter(x=[0,1], y=[0,1], mode='lines', line=dict(dash='dash', color='gray', width=2), name='Referencia (0.5)'))
         fig_auc.update_layout(title="Modelo Óptimo Seleccionado por Área AUC", xaxis_title="Tasa de Falsos Positivos", yaxis_title="Sensibilidad", legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=40, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
-        st.plotly_chart(fig_auc, use_container_width=True, config={'displayModeBar': False})
+        st.plotly_chart(fig_auc, use_container_width=True)
 
-    st.success(f"**Validación Científica ROC/AUC:** La curva ROC ilustra el balance matemático entre la Sensibilidad (Verdaderos Positivos) y la Tasa de Falsas Alarmas. El AUC condensa esto en un indicador absoluto: el algoritmo **{nombre_ganador}** demuestra máxima superioridad probabilística en la tarea de separar las tres etiquetas de riesgo, logrando un AUC consolidado de **{mejor_auc:.3f}**.")
+    st.success(f"""**Validación Científica ROC/AUC:** La curva ROC (Receiver Operating Characteristic) ilustra el balance matemático entre la Sensibilidad (Verdaderos Positivos) y la Tasa de Falsas Alarmas. Visualmente, el clasificador más apto es aquel cuya curva se tensa hacia el vértice superior izquierdo, lo que en salud pública significa lograr detectar amenazas con mínimas alarmas falsas, ahorrando recursos del estado. 
+    
+El Área Bajo la Curva (AUC) condensa esto en un único indicador estadístico: el algoritmo **{nombre_ganador}** demuestra máxima superioridad probabilística en la tarea de separar las tres etiquetas de riesgo, logrando un AUC consolidado de **{mejor_auc:.3f}**. Esto lo posiciona como el motor de inferencia definitivo para un entorno de producción médica.""")
 
     st.divider()
 
@@ -314,14 +318,19 @@ elif fase == "3. Evaluation (Métricas y Rendimiento)":
         st.write("**Random Forest**")
         fig_cm_rf = px.imshow(rf_cm, text_auto=True, x=rf_model.classes_, y=rf_model.classes_, labels=dict(x="Etiqueta Predicha", y="Etiqueta Real"), color_continuous_scale='Blues')
         fig_cm_rf.update_layout(margin=dict(l=10, r=10, t=10, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
-        st.plotly_chart(fig_cm_rf, use_container_width=True, config={'displayModeBar': False})
+        st.plotly_chart(fig_cm_rf, use_container_width=True)
     with c_mat2:
         st.write("**XGBoost**")
         fig_cm_xgb = px.imshow(xgb_cm, text_auto=True, x=label_encoder.classes_, y=label_encoder.classes_, labels=dict(x="Etiqueta Predicha", y="Etiqueta Real"), color_continuous_scale='Oranges')
         fig_cm_xgb.update_layout(margin=dict(l=10, r=10, t=10, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
-        st.plotly_chart(fig_cm_xgb, use_container_width=True, config={'displayModeBar': False})
+        st.plotly_chart(fig_cm_xgb, use_container_width=True)
     
-    st.info("**Análisis Diagnóstico de Errores Críticos:** Esta herramienta matricial desglosa la naturaleza del error de la IA. La diagonal coloreada certifica las predicciones correctas. Los números fuera del eje revelan los falsos positivos y falsos negativos.")
+    st.info("""**Análisis Diagnóstico de Errores Críticos:** Esta herramienta matricial es fundamental para la toma de decisiones. Desglosa la naturaleza del error de la IA. La diagonal coloreada certifica las predicciones correctas, pero nuestra atención ingenieril debe ir a los valores fuera de la diagonal:
+    
+- **Falsos Negativos:** Predecir riesgo 'Bajo' cuando en realidad el brote fue 'Alto'. Este es el error más letal, ya que deja desprotegidas a comunidades vulnerables frente al Hantavirus.
+- **Falsos Positivos:** Generar alarmas 'Altas' cuando el riesgo era 'Bajo', lo que derivaría en un gasto logístico e intervenciones innecesarias para el sistema de salud. 
+
+Minimizar los falsos negativos justifica la efectividad de la arquitectura IA propuesta.""")
 
     st.divider()
 
@@ -334,7 +343,10 @@ elif fase == "3. Evaluation (Métricas y Rendimiento)":
         st.write("**Métricas XGBoost**")
         st.dataframe(pd.DataFrame(xgb_rep).transpose().style.format("{:.2f}").background_gradient(cmap='Oranges'), use_container_width=True)
     
-    st.info("**Desempeño en Clases Específicas:** Extraemos las métricas intrínsecas para la validación. Destaca la métrica *Recall*, ya que penaliza fuertemente a la IA si no logra detectar los verdaderos brotes históricos. El *F1-Score* nos confirma un equilibrio matemático sano.")
+    st.info("""**Desempeño en Clases Específicas:** Extraemos el rendimiento detallado requerido para la auditoría técnica del negocio:
+- **Recall (Sensibilidad):** La métrica reina en proyectos médicos. Indica qué porcentaje de los brotes graves históricos la IA logró interceptar a tiempo.
+- **Precision (Precisión):** Define la confiabilidad de la alerta. De todas las veces que la IA declaró "Riesgo Alto", ¿cuántas fue verdad?
+- **F1-Score:** El promedio armónico que asegura que el modelo no esté favoreciendo el Recall a costa de destruir la Precisión.""")
 
 # ------------------------------------------
 # FASE 4: Proyección
@@ -378,6 +390,11 @@ else:
         margin=dict(l=10, r=10, t=40, b=10)
     )
     
-    st.plotly_chart(fig_p, use_container_width=True, config={'displayModeBar': False})
+    st.plotly_chart(fig_p, use_container_width=True)
     
-    st.info("**Fundamento del Algoritmo Proyectivo:** Es vital destacar que a diferencia de los modelos anteriores (que asignaban una etiqueta categórica), aquí aplicamos el **Modelo Aditivo Generalizado (GAM)** conocido como Prophet. Esta arquitectura modela **Series de Tiempo**, devolviendo un valor numérico continuo (redondeado a enteros de pacientes). Extrae la tendencia subyacente de la carga histórica y proyecta el volumen de casos a futuro, blindado por una franja sombreada que delimita matemáticamente el rango de incertidumbre estadístico.")
+    st.info("""**Fundamento del Algoritmo Proyectivo:** Es fundamental hacer la distinción técnica ante el jurado: A diferencia de los modelos de las Fases 2 y 3 (que actuaban como Clasificadores discretos para asignar una etiqueta), aquí cambiamos de paradigma e implementamos el **Modelo Aditivo Generalizado (GAM)** desarrollado por Meta, conocido como Prophet.
+
+Esta arquitectura matemática está diseñada exclusivamente para modelar **Series de Tiempo**, lo que significa que su output ya no es una etiqueta, sino una **variable continua (una proyección numérica de infectados)** a futuro. 
+
+- **La línea central** traza la evolución tendencial absorbiendo y suavizando las fluctuaciones de años anteriores.
+- **La franja sombreada** representa el intervalo de confianza (el margen estadístico de error). La amplitud geométrica de esta franja le otorga a las autoridades de salud un rango probabilístico para desplegar recursos económicos y camas de hospital contemplando siempre el escenario más adverso (límite superior).""")
