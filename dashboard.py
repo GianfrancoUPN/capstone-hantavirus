@@ -126,14 +126,20 @@ if fase == "1. Data Understanding (Exploración)":
     st.header("📊 Fase 1: Comprensión y Procesamiento de Datos")
     st.write("Análisis exploratorio de las variables climáticas y su relación con la etiqueta de riesgo de Hantavirus.")
     
-    # --- TABLA DEL DICCIONARIO DE ETIQUETAS ---
+    # --- TABLA PLOTLY: DICCIONARIO DE ETIQUETAS ---
     st.subheader("🏷️ Definición de la Variable Objetivo (Etiqueta a Predecir)")
     etiquetas_info = pd.DataFrame({
         'Etiqueta Multiclase': ['Bajo', 'Medio', 'Alto'],
         'Rango Matemático (Casos)': [f'0 a {int(umbral_1)}', f'{int(umbral_1)+1} a {int(umbral_2)}', f'Mayor a {int(umbral_2)}'],
         'Interpretación Epidemiológica': ['Transmisión controlada', 'Alerta preventiva por aumento', 'Brote epidemiológico inminente']
     })
-    st.table(etiquetas_info)
+    fig_etiq = go.Figure(data=[go.Table(
+        header=dict(values=list(etiquetas_info.columns), fill_color='#1E3A8A', font=dict(color='white', size=14), align='center'),
+        cells=dict(values=[etiquetas_info[col] for col in etiquetas_info.columns], fill_color='#F3F4F6', align='center', font=dict(size=13), height=30)
+    )])
+    fig_etiq.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=150)
+    st.plotly_chart(fig_etiq, use_container_width=True)
+    
     st.info("**Aclaración de Etiquetado:** Como el objetivo es predecir la severidad del brote, hemos transformado la variable continua de casos en tres etiquetas categóricas basadas en terciles estadísticos. El sistema de Inteligencia Artificial aprenderá a clasificar directamente en estas tres categorías.")
     st.divider()
 
@@ -155,7 +161,15 @@ if fase == "1. Data Understanding (Exploración)":
         st.info("**Análisis del Histograma:** Aquí definimos qué es lo que el modelo va a aprender. Hemos categorizado la cantidad de casos continuos en tres **etiquetas de clase: Bajo, Medio y Alto**. El gráfico demuestra un claro sesgo en la distribución de la data (imbalanced dataset): predominan los eventos de riesgo Bajo. Esto justifica técnicamente la aplicación de ensambles avanzados como XGBoost, que manejan mejor este desbalance para clasificar correctamente los brotes de alto riesgo (eventos anómalos).")
         
     st.subheader("Muestra del Dataset Consolidado")
-    st.dataframe(df.tail(15), use_container_width=True)
+    
+    # --- TABLA PLOTLY: DATASET MUESTRA ---
+    df_tail = df.tail(15)
+    fig_tail = go.Figure(data=[go.Table(
+        header=dict(values=list(df_tail.columns), fill_color='#1E3A8A', font=dict(color='white'), align='center'),
+        cells=dict(values=[df_tail[col] for col in df_tail.columns], fill_color='#F3F4F6', align='center')
+    )])
+    fig_tail.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=350)
+    st.plotly_chart(fig_tail, use_container_width=True)
 
 # ------------------------------------------
 # FASE 2: Modelado (Simulador)
@@ -178,7 +192,6 @@ elif fase == "2. Modeling (Entrenamiento y Simulación)":
     c1, c2 = st.columns([1, 1])
     with c1:
         st.subheader("Simulador de Inferencia (Clasificación)")
-        # Sliders modificados a números enteros para mayor claridad (excepto roedores)
         temp = st.slider("Temperatura (°C)", 0, 40, 20)
         lluvia = st.slider("Precipitación (mm)", 0, 3000, 1000)
         roedores = st.slider("Índice de Roedores", 0.0, 1.0, 0.40)
@@ -209,10 +222,11 @@ elif fase == "2. Modeling (Entrenamiento y Simulación)":
         fig_bar = px.bar(importancia, x='Peso', y='Variable', orientation='h', color='Peso', color_continuous_scale='Blues')
         fig_bar.update_layout(margin=dict(l=10, r=10, t=30, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
         st.plotly_chart(fig_bar, use_container_width=True)
+        
         st.info("**Interpretación del Motor de Inferencia:** Este gráfico de franjas azules abre la 'caja negra' de la IA. Te muestra qué variables tienen mayor peso matemático al tomar la decisión. La IA actúa como un **Clasificador Multiclase**: evalúa tu configuración de los deslizadores y devuelve una única **etiqueta categórica** de riesgo, dándole prioridad de análisis a la variable que encabeza esta lista.")
 
     st.divider()
-
+    
     st.info("""**Dinámica Epidemiológica de las Variables (Causa y Efecto):**
 - **Precipitación (Lluvia):** Es el detonante principal. Un aumento en la precipitación genera mayor abundancia de vegetación y semillas, lo que provoca una explosión demográfica en la población de roedores silvestres.
 - **Índice de Roedores:** Representa la cantidad poblacional del reservorio natural del virus. A mayor índice, existe una mayor carga viral liberada en el ambiente a través de sus excretas y saliva.
@@ -230,22 +244,27 @@ elif fase == "3. Evaluation (Métricas y Rendimiento)":
     
     st.subheader("📋 Auditoría de Predicciones: Etiquetas Reales vs. IA")
     
+    # Preparación de datos para la tabla visual Plotly
     df_predicciones = X_test_df.copy().head(15) 
     df_predicciones.insert(0, 'ETIQUETA REAL', y_test_real.values[:15]) 
     df_predicciones.insert(1, 'Clasificación Random Forest', rf_model.predict(X_test_df)[:15])
     df_predicciones.insert(2, 'Clasificación XGBoost', label_encoder.inverse_transform(xgb_model.predict(X_test_df))[:15])
     
-    def color_aciertos(row):
-        colores = ['' for _ in row.index]
-        for i, col in enumerate(row.index):
-            if col in ['Clasificación Random Forest', 'Clasificación XGBoost']:
-                if row[col] == row['ETIQUETA REAL']:
-                    colores[i] = 'background-color: rgba(40, 167, 69, 0.3)' 
-                else:
-                    colores[i] = 'background-color: rgba(220, 53, 69, 0.3)' 
-        return colores
+    df_mostrar = df_predicciones[['ETIQUETA REAL', 'Clasificación Random Forest', 'Clasificación XGBoost']]
+    
+    color_real = ['#F3F4F6'] * 15
+    color_rf = ['#d1e7dd' if r == p else '#f8d7da' for r, p in zip(df_mostrar['ETIQUETA REAL'], df_mostrar['Clasificación Random Forest'])]
+    color_xgb = ['#d1e7dd' if r == p else '#f8d7da' for r, p in zip(df_mostrar['ETIQUETA REAL'], df_mostrar['Clasificación XGBoost'])]
 
-    st.dataframe(df_predicciones.style.apply(color_aciertos, axis=1), use_container_width=True)
+    # --- TABLA PLOTLY: AUDITORÍA PREDICCIONES (Con colores condicionales) ---
+    fig_pred = go.Figure(data=[go.Table(
+        header=dict(values=list(df_mostrar.columns), fill_color='#1E3A8A', font=dict(color='white', size=13), align='center'),
+        cells=dict(values=[df_mostrar['ETIQUETA REAL'], df_mostrar['Clasificación Random Forest'], df_mostrar['Clasificación XGBoost']], 
+                   fill_color=[color_real, color_rf, color_xgb], align='center', font=dict(size=12), height=30)
+    )])
+    fig_pred.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=350)
+    st.plotly_chart(fig_pred, use_container_width=True)
+    
     st.info("""**Aclaración Técnica sobre la Predicción:** El sistema predice una **etiqueta individual de riesgo**. Esta matriz consolida el 20% del dataset que fue separado exclusivamente para pruebas a ciegas (Testing). Compara la 'Etiqueta Real' histórica contra la inferencia de los algoritmos. 
     
 Las celdas verdes certifican la capacidad de generalización del modelo. Un alto nivel de aciertos aquí demuestra que el sistema no memorizó los datos (evitando el overfitting), sino que aprendió exitosamente las reglas matemáticas subyacentes de la propagación del virus frente a factores climáticos.""")
@@ -338,10 +357,27 @@ Minimizar los falsos negativos justifica la efectividad de la arquitectura IA pr
     c_rep1, c_rep2 = st.columns(2)
     with c_rep1:
         st.write("**Métricas Random Forest**")
-        st.dataframe(pd.DataFrame(rf_rep).transpose().style.format("{:.2f}").background_gradient(cmap='Blues'), use_container_width=True)
+        df_rf_rep = pd.DataFrame(rf_rep).transpose().reset_index().round(2)
+        df_rf_rep.rename(columns={'index': 'Métrica'}, inplace=True)
+        # --- TABLA PLOTLY: MÉTRICAS RF ---
+        fig_rf_rep = go.Figure(data=[go.Table(
+            header=dict(values=list(df_rf_rep.columns), fill_color='#0284C7', font=dict(color='white'), align='center'),
+            cells=dict(values=[df_rf_rep[col] for col in df_rf_rep.columns], fill_color='#F0F9FF', align='center')
+        )])
+        fig_rf_rep.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=200)
+        st.plotly_chart(fig_rf_rep, use_container_width=True)
+        
     with c_rep2:
         st.write("**Métricas XGBoost**")
-        st.dataframe(pd.DataFrame(xgb_rep).transpose().style.format("{:.2f}").background_gradient(cmap='Oranges'), use_container_width=True)
+        df_xgb_rep = pd.DataFrame(xgb_rep).transpose().reset_index().round(2)
+        df_xgb_rep.rename(columns={'index': 'Métrica'}, inplace=True)
+        # --- TABLA PLOTLY: MÉTRICAS XGB ---
+        fig_xgb_rep = go.Figure(data=[go.Table(
+            header=dict(values=list(df_xgb_rep.columns), fill_color='#EA580C', font=dict(color='white'), align='center'),
+            cells=dict(values=[df_xgb_rep[col] for col in df_xgb_rep.columns], fill_color='#FFF7ED', align='center')
+        )])
+        fig_xgb_rep.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=200)
+        st.plotly_chart(fig_xgb_rep, use_container_width=True)
     
     st.info("""**Desempeño en Clases Específicas:** Extraemos el rendimiento detallado requerido para la auditoría técnica del negocio:
 - **Recall (Sensibilidad):** La métrica reina en proyectos médicos. Indica qué porcentaje de los brotes graves históricos la IA logró interceptar a tiempo.
@@ -367,8 +403,15 @@ else:
     df_proyeccion['ds'] = df_proyeccion['ds'].dt.year
     df_proyeccion.columns = ['Año Proyectado', 'Casos Estimados', 'Mínimo Esperado (Optimista)', 'Máximo Esperado (Pesimista)']
     
-    # Aplicar formato de miles sin decimales
-    st.dataframe(df_proyeccion.style.format({'Casos Estimados': '{:,.0f}', 'Mínimo Esperado (Optimista)': '{:,.0f}', 'Máximo Esperado (Pesimista)': '{:,.0f}'}), use_container_width=True)
+    # --- TABLA PLOTLY: PROYECCIONES FUTURAS ---
+    fig_proy = go.Figure(data=[go.Table(
+        header=dict(values=list(df_proyeccion.columns), fill_color='#1E3A8A', font=dict(color='white'), align='center'),
+        cells=dict(values=[df_proyeccion[col] for col in df_proyeccion.columns], 
+                   fill_color='#F3F4F6', align='center', format=["", ",.0f", ",.0f", ",.0f"])
+    )])
+    fig_proy.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=200)
+    st.plotly_chart(fig_proy, use_container_width=True)
+
     st.info("**Detalle Tabular:** Respondiendo a los requerimientos de auditoría, esta tabla muestra los valores enteros exactos que el Modelo Aditivo Generalizado (GAM) Prophet está previendo para la ventana de tiempo seleccionada, antes de ser graficados.")
     st.divider()
 
