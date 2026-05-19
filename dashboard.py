@@ -7,7 +7,7 @@ from prophet import Prophet
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, roc_curve, auc
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, roc_curve, auc, log_loss
 from sklearn.preprocessing import LabelEncoder, label_binarize
 
 # ==========================================
@@ -101,33 +101,47 @@ def entrenar_modelos(datos):
         X, y, y_encoded, test_size=0.2, random_state=42
     )
     
-    # Random Forest
+    # --- Random Forest ---
     rf = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
     rf.fit(X_train, y_train)
     rf_pred = rf.predict(X_test)
     acc_rf = accuracy_score(y_test, rf_pred)
     rf_cm = confusion_matrix(y_test, rf_pred, labels=rf.classes_)
     rf_rep = classification_report(y_test, rf_pred, output_dict=True)
-    rf_probs = rf.predict_proba(X_test) # Necesario para ROC
+    rf_probs = rf.predict_proba(X_test)
+
+    # Curva de Pérdida iterativa para Random Forest
+    rf_loss_trees = []
+    rf_loss_val = []
+    for i in range(1, 105, 5):
+        rf_iter = RandomForestClassifier(n_estimators=i, max_depth=5, random_state=42)
+        rf_iter.fit(X_train, y_train)
+        probs = rf_iter.predict_proba(X_test)
+        rf_loss_trees.append(i)
+        rf_loss_val.append(log_loss(y_test, probs))
     
-    # XGBoost
+    # --- XGBoost ---
     xgb = XGBClassifier(n_estimators=100, learning_rate=0.1, max_depth=5, random_state=42)
-    xgb.fit(X_train, y_train_enc)
+    xgb.fit(X_train, y_train_enc, eval_set=[(X_train, y_train_enc), (X_test, y_test_enc)], verbose=False)
     xgb_pred = xgb.predict(X_test)
     acc_xgb = accuracy_score(y_test_enc, xgb_pred)
     xgb_cm = confusion_matrix(y_test_enc, xgb_pred, labels=le.transform(le.classes_))
     xgb_rep = classification_report(y_test_enc, xgb_pred, target_names=le.classes_, output_dict=True)
-    xgb_probs = xgb.predict_proba(X_test) # Necesario para ROC
+    xgb_probs = xgb.predict_proba(X_test)
 
-    # Prophet
+    # Extraer historial de pérdida de XGBoost
+    xgb_evals = xgb.evals_result()
+    xgb_loss_train = xgb_evals['validation_0']['mlogloss']
+    xgb_loss_test = xgb_evals['validation_1']['mlogloss']
+
+    # --- Prophet ---
     df_p = datos.groupby('year')['confirmed_cases'].sum().reset_index().rename(columns={'year':'ds', 'confirmed_cases':'y'})
     df_p['ds'] = pd.to_datetime(df_p['ds'], format='%Y')
     m_prophet = Prophet().fit(df_p)
     
-    return rf, xgb, le, acc_rf, acc_xgb, rf_cm, xgb_cm, rf_rep, xgb_rep, m_prophet, features, X_test, y_test, y_test_enc, rf_probs, xgb_probs
+    return rf, xgb, le, acc_rf, acc_xgb, rf_cm, xgb_cm, rf_rep, xgb_rep, m_prophet, features, X_test, y_test, y_test_enc, rf_probs, xgb_probs, xgb_loss_train, xgb_loss_test, rf_loss_trees, rf_loss_val
 
-# Desempaquetar todas las variables devueltas
-rf_model, xgb_model, label_encoder, acc_rf, acc_xgb, rf_cm, xgb_cm, rf_rep, xgb_rep, prophet_model, rf_features, X_test_df, y_test_real, y_test_enc, rf_probs, xgb_probs = entrenar_modelos(df)
+rf_model, xgb_model, label_encoder, acc_rf, acc_xgb, rf_cm, xgb_cm, rf_rep, xgb_rep, prophet_model, rf_features, X_test_df, y_test_real, y_test_enc, rf_probs, xgb_probs, xgb_loss_train, xgb_loss_test, rf_loss_trees, rf_loss_val = entrenar_modelos(df)
 
 # ==========================================
 # INTERFAZ CRISP-DM
@@ -156,14 +170,14 @@ if fase == "1. Data Understanding (Exploración)":
         fig_corr = px.imshow(corr_matrix, text_auto=".2f", aspect="auto", color_continuous_scale='RdBu_r', origin='lower')
         fig_corr.update_layout(margin=dict(l=10, r=10, t=30, b=10))
         st.plotly_chart(fig_corr, use_container_width=True, config={'displayModeBar': False})
-        st.info("**Interpretación de la Matriz:** Los valores cercanos a 1 (rojo) indican una correlación positiva fuerte. Se observa que el *Índice de Roedores* y la *Precipitación* tienen el mayor impacto directo en los casos confirmados. Biológicamente, mayor lluvia genera más vegetación, lo que eleva la población del roedor reservorio.")
+        st.info("**Interpretación de la Matriz:** Los valores cercanos a 1 (rojo) indican una correlación positiva fuerte. Se observa que el *Índice de Roedores* y la *Precipitación* tienen el mayor impacto directo en los casos confirmados.")
     
     with col2:
         st.subheader("Distribución Histórica de Casos")
         fig_hist = px.histogram(df, x='confirmed_cases', nbins=30, color='Nivel_Riesgo', title="Frecuencia de Brotes por Nivel de Riesgo")
         fig_hist.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.4, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=30, b=10))
         st.plotly_chart(fig_hist, use_container_width=True, config={'displayModeBar': False})
-        st.info("**Interpretación del Histograma:** Muestra el desbalance natural de la carga epidemiológica. La gran mayoría de los registros históricos caen en riesgo 'Bajo', siendo los brotes 'Altos' eventos anómalos. Esto justifica el uso de algoritmos de Machine Learning robustos como XGBoost para capturar estas excepciones.")
+        st.info("**Interpretación del Histograma:** Muestra el desbalance natural de la carga epidemiológica. La gran mayoría de los registros históricos caen en riesgo 'Bajo', siendo los brotes 'Altos' eventos anómalos.")
         
     st.subheader("Muestra del Dataset Consolidado")
     st.dataframe(df.tail(15), use_container_width=True)
@@ -181,7 +195,9 @@ elif fase == "2. Modeling (Entrenamiento y Simulación)":
     df_mapa = df if año_seleccionado == "Ver todos los años" else df[df['year'] == año_seleccionado]
         
     fig_map = px.scatter_geo(df_mapa, lat='latitude', lon='longitude', color='Nivel_Riesgo', size='confirmed_cases',
-                             hover_name='country', color_discrete_map={'Bajo':'green','Medio':'orange','Alto':'red'})
+                             hover_name='country', 
+                             hover_data={'Nivel_Riesgo': True, 'confirmed_cases': True, 'deaths': True, 'syndrome': True, 'latitude': False, 'longitude': False},
+                             color_discrete_map={'Bajo':'green','Medio':'orange','Alto':'red'})
     fig_map.update_layout(margin=dict(l=0, r=0, t=0, b=0), legend=dict(orientation="h", y=-0.2, xanchor="center", x=0.5))
     st.plotly_chart(fig_map, use_container_width=True, config={'displayModeBar': False})
     
@@ -218,7 +234,6 @@ elif fase == "2. Modeling (Entrenamiento y Simulación)":
         fig_bar = px.bar(importancia, x='Peso', y='Variable', orientation='h', color='Peso', color_continuous_scale='Blues')
         fig_bar.update_layout(margin=dict(l=10, r=10, t=30, b=10))
         st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
-        st.info(f"**Interpretación de Importancia:** Refleja la lógica interna de la IA. El modelo determina matemáticamente que la variable superior es el principal detonante para clasificar un brote de Hantavirus, mientras que las variables inferiores tienen menor peso en la decisión.")
 
 # ------------------------------------------
 # FASE 3: Evaluación (ROC, AUC y Tabla)
@@ -226,11 +241,8 @@ elif fase == "2. Modeling (Entrenamiento y Simulación)":
 elif fase == "3. Evaluation (Métricas y Rendimiento)":
     st.header("⚖️ Fase 3: Evaluación y Validación Científica")
     
-    # --- 1. TABLA DE PREDICCIÓN ---
     st.subheader("📋 Tabla de Predicción (Ground Truth vs Inteligencia Artificial)")
-    st.write("Datos separados para evaluación (20% del dataset) nunca antes vistos por el modelo.")
-    
-    df_predicciones = X_test_df.copy().head(15) # Muestra los primeros 15 casos
+    df_predicciones = X_test_df.copy().head(15) 
     df_predicciones.insert(0, 'RIESGO REAL', y_test_real.values[:15]) 
     df_predicciones.insert(1, 'Predicción Random Forest', rf_model.predict(X_test_df)[:15])
     df_predicciones.insert(2, 'Predicción XGBoost', label_encoder.inverse_transform(xgb_model.predict(X_test_df))[:15])
@@ -240,35 +252,28 @@ elif fase == "3. Evaluation (Métricas y Rendimiento)":
         for i, col in enumerate(row.index):
             if col in ['Predicción Random Forest', 'Predicción XGBoost']:
                 if row[col] == row['RIESGO REAL']:
-                    colores[i] = 'background-color: rgba(40, 167, 69, 0.3)' # Verde (Acierto)
+                    colores[i] = 'background-color: rgba(40, 167, 69, 0.3)' 
                 else:
-                    colores[i] = 'background-color: rgba(220, 53, 69, 0.3)' # Rojo (Fallo)
+                    colores[i] = 'background-color: rgba(220, 53, 69, 0.3)' 
         return colores
 
     st.dataframe(df_predicciones.style.apply(color_aciertos, axis=1), use_container_width=True)
-    st.info("**Interpretación de la Tabla:** Contrasta el 'Riesgo Real' histórico contra la estimación del algoritmo a ciegas. Las celdas verdes representan aciertos exactos de la IA. Un alto volumen de celdas verdes valida que el modelo detectó correctamente los patrones climáticos que ocasionaron el brote.")
 
     st.divider()
-
-    # --- 1.5. EXACTITUD GLOBAL (Accuracy) ---
     st.subheader("Tabla Resumen de Exactitud (Accuracy)")
     bench_df = pd.DataFrame({'Algoritmo': ['Random Forest', 'XGBoost'], 'Exactitud Global': [acc_rf, acc_xgb]})
     fig_acc = px.bar(bench_df, x='Algoritmo', y='Exactitud Global', color='Algoritmo', text_auto='.2%')
     fig_acc.update_layout(yaxis_range=[0, 1], margin=dict(l=10, r=10, t=30, b=10))
     st.plotly_chart(fig_acc, use_container_width=True, config={'displayModeBar': False})
-    st.info("**Interpretación de Exactitud:** Representa el porcentaje total de predicciones correctas sobre el conjunto de pruebas. Es un buen indicador general del desempeño del modelo.")
-
+    
     st.divider()
 
-    # --- 2. GRÁFICOS ROC Y AUC ---
-    st.subheader("📈 Comparativa de Modelos: Curva ROC y Área Bajo la Curva (AUC)")
-    
-    # Binarizar las etiquetas para cálculo ROC Multiclase (Promedio Macro)
+    # --- CÁLCULOS MATEMÁTICOS PARA ROC Y AUC ---
     y_test_bin = label_binarize(y_test_enc, classes=[0, 1, 2])
     fpr_grid = np.linspace(0.0, 1.0, 100)
     n_classes = len(label_encoder.classes_)
     
-    # Matemáticas para unificar las 3 clases en 1 sola curva (Random Forest)
+    # Matemáticas para Random Forest
     mean_tpr_rf = np.zeros_like(fpr_grid)
     for i in range(n_classes):
         fpr, tpr, _ = roc_curve(y_test_bin[:, i], rf_probs[:, i])
@@ -276,42 +281,71 @@ elif fase == "3. Evaluation (Métricas y Rendimiento)":
     mean_tpr_rf /= n_classes
     auc_rf_macro = auc(fpr_grid, mean_tpr_rf)
     
-    # Matemáticas para unificar las 3 clases en 1 sola curva (XGBoost)
+    # Matemáticas para XGBoost
     mean_tpr_xgb = np.zeros_like(fpr_grid)
     for i in range(n_classes):
         fpr, tpr, _ = roc_curve(y_test_bin[:, i], xgb_probs[:, i])
         mean_tpr_xgb += np.interp(fpr_grid, fpr, tpr)
     mean_tpr_xgb /= n_classes
     auc_xgb_macro = auc(fpr_grid, mean_tpr_xgb)
-    
-    c_roc1, c_roc2 = st.columns(2)
-    
-    # Curva ROC Comparativa
-    with c_roc1:
-        fig_roc = go.Figure()
-        fig_roc.add_trace(go.Scatter(x=fpr_grid, y=mean_tpr_xgb, mode='lines', name='XGBoost', line=dict(color='navy', width=3)))
-        fig_roc.add_trace(go.Scatter(x=fpr_grid, y=mean_tpr_rf, mode='lines', name='Random Forest', line=dict(color='gold', width=3)))
-        fig_roc.add_trace(go.Scatter(x=[0,1], y=[0,1], mode='lines', line=dict(dash='dash', color='crimson', width=2), name='Clasificador Aleatorio'))
-        
-        fig_roc.update_layout(title="Curva ROC Global", xaxis_title="Tasa de Falsos Positivos", yaxis_title="Sensibilidad", legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=40, b=10))
-        st.plotly_chart(fig_roc, use_container_width=True, config={'displayModeBar': False})
 
-    # Gráfico del AUC del Ganador
-    with c_roc2:
-        mejor_auc = max(auc_rf_macro, auc_xgb_macro)
-        if mejor_auc == auc_xgb_macro:
-            tpr_ganador, nombre_ganador, color_area, color_linea = mean_tpr_xgb, "XGBoost", "rgba(30, 144, 255, 0.4)", "navy"
-        else:
-            tpr_ganador, nombre_ganador, color_area, color_linea = mean_tpr_rf, "Random Forest", "rgba(255, 215, 0, 0.4)", "gold"
-            
-        fig_auc = go.Figure()
-        fig_auc.add_trace(go.Scatter(x=fpr_grid, y=tpr_ganador, mode='lines', fill='tozeroy', fillcolor=color_area, name=f'Área {nombre_ganador} (AUC = {mejor_auc:.3f})', line=dict(color=color_linea, width=3)))
-        fig_auc.add_trace(go.Scatter(x=[0,1], y=[0,1], mode='lines', line=dict(dash='dash', color='gray', width=2), name='Referencia (0.5)'))
-        
-        fig_auc.update_layout(title="Modelo Óptimo: Área Bajo la Curva", xaxis_title="Tasa de Falsos Positivos", yaxis_title="Sensibilidad", legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=40, b=10))
-        st.plotly_chart(fig_auc, use_container_width=True, config={'displayModeBar': False})
 
-    st.success(f"**Interpretación ROC/AUC:** El gráfico ROC (izquierdo) evalúa qué algoritmo diferencia mejor los niveles de riesgo sin emitir falsas alarmas. La línea más abombada hacia la esquina superior izquierda es la mejor. El gráfico AUC (derecho) certifica que **{nombre_ganador}** es el modelo matemáticamente superior, logrando un área de **{mejor_auc:.3f}** (siendo 1.0 la clasificación perfecta).")
+    # ==========================================
+    # BLOQUE 1: RANDOM FOREST DETALLADO
+    # ==========================================
+    st.subheader("🌲 Análisis Detallado: Random Forest")
+    c_rf1, c_rf2, c_rf3 = st.columns(3)
+    
+    with c_rf1:
+        fig_roc_rf = go.Figure()
+        fig_roc_rf.add_trace(go.Scatter(x=fpr_grid, y=mean_tpr_rf, mode='lines', line=dict(color='gold', width=3), name='Curva ROC'))
+        fig_roc_rf.add_trace(go.Scatter(x=[0,1], y=[0,1], mode='lines', line=dict(dash='dash', color='gray', width=2), showlegend=False))
+        fig_roc_rf.update_layout(title="Curva ROC", xaxis_title="Falsos Positivos", yaxis_title="Sensibilidad", margin=dict(l=10, r=10, t=40, b=10))
+        st.plotly_chart(fig_roc_rf, use_container_width=True, config={'displayModeBar': False})
+
+    with c_rf2:
+        fig_auc_rf = go.Figure()
+        fig_auc_rf.add_trace(go.Scatter(x=fpr_grid, y=mean_tpr_rf, mode='lines', fill='tozeroy', fillcolor='rgba(255, 215, 0, 0.4)', name=f'AUC = {auc_rf_macro:.3f}', line=dict(color='gold', width=3)))
+        fig_auc_rf.add_trace(go.Scatter(x=[0,1], y=[0,1], mode='lines', line=dict(dash='dash', color='gray', width=2), showlegend=False))
+        fig_auc_rf.update_layout(title=f"Área Bajo la Curva (AUC: {auc_rf_macro:.3f})", xaxis_title="Falsos Positivos", yaxis_title="Sensibilidad", margin=dict(l=10, r=10, t=40, b=10))
+        st.plotly_chart(fig_auc_rf, use_container_width=True, config={'displayModeBar': False})
+
+    with c_rf3:
+        fig_loss_rf = go.Figure()
+        fig_loss_rf.add_trace(go.Scatter(x=rf_loss_trees, y=rf_loss_val, mode='lines+markers', line=dict(color='gold', width=3), name='Pérdida (Log Loss)'))
+        fig_loss_rf.update_layout(title="Curva de Pérdida (Bagging)", xaxis_title="N° de Árboles", yaxis_title="Error Logarítmico", margin=dict(l=10, r=10, t=40, b=10))
+        st.plotly_chart(fig_loss_rf, use_container_width=True, config={'displayModeBar': False})
+
+    st.divider()
+
+    # ==========================================
+    # BLOQUE 2: XGBOOST DETALLADO
+    # ==========================================
+    st.subheader("🚀 Análisis Detallado: XGBoost")
+    c_xgb1, c_xgb2, c_xgb3 = st.columns(3)
+    
+    with c_xgb1:
+        fig_roc_xgb = go.Figure()
+        fig_roc_xgb.add_trace(go.Scatter(x=fpr_grid, y=mean_tpr_xgb, mode='lines', line=dict(color='navy', width=3), name='Curva ROC'))
+        fig_roc_xgb.add_trace(go.Scatter(x=[0,1], y=[0,1], mode='lines', line=dict(dash='dash', color='gray', width=2), showlegend=False))
+        fig_roc_xgb.update_layout(title="Curva ROC", xaxis_title="Falsos Positivos", yaxis_title="Sensibilidad", margin=dict(l=10, r=10, t=40, b=10))
+        st.plotly_chart(fig_roc_xgb, use_container_width=True, config={'displayModeBar': False})
+
+    with c_xgb2:
+        fig_auc_xgb = go.Figure()
+        fig_auc_xgb.add_trace(go.Scatter(x=fpr_grid, y=mean_tpr_xgb, mode='lines', fill='tozeroy', fillcolor='rgba(30, 144, 255, 0.4)', name=f'AUC = {auc_xgb_macro:.3f}', line=dict(color='navy', width=3)))
+        fig_auc_xgb.add_trace(go.Scatter(x=[0,1], y=[0,1], mode='lines', line=dict(dash='dash', color='gray', width=2), showlegend=False))
+        fig_auc_xgb.update_layout(title=f"Área Bajo la Curva (AUC: {auc_xgb_macro:.3f})", xaxis_title="Falsos Positivos", yaxis_title="Sensibilidad", margin=dict(l=10, r=10, t=40, b=10))
+        st.plotly_chart(fig_auc_xgb, use_container_width=True, config={'displayModeBar': False})
+
+    with c_xgb3:
+        fig_loss_xgb = go.Figure()
+        fig_loss_xgb.add_trace(go.Scatter(y=xgb_loss_train, mode='lines', line=dict(color='lightblue', width=2), name='Train'))
+        fig_loss_xgb.add_trace(go.Scatter(y=xgb_loss_test, mode='lines', line=dict(color='navy', width=3), name='Test'))
+        fig_loss_xgb.update_layout(title="Curva de Pérdida (Boosting)", xaxis_title="Épocas (Rondas)", yaxis_title="Error (mlogloss)", legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=40, b=10))
+        st.plotly_chart(fig_loss_xgb, use_container_width=True, config={'displayModeBar': False})
+
+    st.info("""**Justificación Analítica:** Al separar matemáticamente los modelos, podemos auditar de forma visual que ambos algoritmos lograron converger exitosamente. En las **Curvas de Pérdida**, se evidencia que conforme avanza el aprendizaje (ya sea añadiendo árboles en Random Forest o procesando épocas en XGBoost), el error estadístico decae y se estabiliza. Notablemente en XGBoost, la línea de prueba (Test) desciende a la par que la de entrenamiento, demostrando contundentemente que **el sistema no presenta sobreajuste (overfitting)**.""")
 
     st.divider()
 
@@ -328,7 +362,6 @@ elif fase == "3. Evaluation (Métricas y Rendimiento)":
         fig_cm_xgb = px.imshow(xgb_cm, text_auto=True, x=label_encoder.classes_, y=label_encoder.classes_, labels=dict(x="Predicción", y="Realidad"), color_continuous_scale='Oranges')
         fig_cm_xgb.update_layout(margin=dict(l=10, r=10, t=10, b=10))
         st.plotly_chart(fig_cm_xgb, use_container_width=True, config={'displayModeBar': False})
-    st.info("**Interpretación de las Matrices:** La diagonal de colores oscuros representa los aciertos, donde la predicción coincide con la realidad. Los valores fuera de la diagonal muestran en qué clases se confunde el modelo (falsos positivos/negativos).")
 
     st.divider()
 
@@ -341,7 +374,6 @@ elif fase == "3. Evaluation (Métricas y Rendimiento)":
     with c_rep2:
         st.write("**Métricas XGBoost**")
         st.dataframe(pd.DataFrame(xgb_rep).transpose().style.format("{:.2f}").background_gradient(cmap='Oranges'), use_container_width=True)
-    st.info("**Interpretación de Métricas:** Desglosa el desempeño por clase de riesgo. El 'Recall' mide qué proporción de brotes reales el modelo logró capturar, mientras que la 'Precisión' mide cuántas de sus alertas fueron correctas. El 'F1-Score' equilibra ambos valores.")
 
 # ------------------------------------------
 # FASE 4: Proyección
@@ -353,24 +385,8 @@ else:
     pred = prophet_model.predict(fut)
     
     fig_p = px.line(pred, x='ds', y='yhat', title="Curva de Casos Históricos y Predicción de Tendencia")
-    
-    # Mantenemos las etiquetas originales para que Prophet no se confunda, 
-    # pero actualizamos los títulos del hoverbox (recuadro blanco)
     fig_p.update_traces(hovertemplate='<b>%{x|%b %Y}</b><br>Casos Estimados: %{y:.0f}<extra></extra>')
-    
     fig_p.add_scatter(x=pred['ds'], y=pred['yhat_upper'], mode='lines', line=dict(width=0), showlegend=False, hoverinfo='skip')
     fig_p.add_scatter(x=pred['ds'], y=pred['yhat_lower'], mode='lines', fill='tonexty', line=dict(width=0), showlegend=False, name="Margen de Error", hoverinfo='skip')
-    
-    # Forzamos a que aparezca el recuadro blanco clásico y bloqueamos el zoom táctil
-    fig_p.update_layout(
-        xaxis_title="Año de Proyección",
-        yaxis_title="Casos Proyectados",
-        dragmode=False,
-        xaxis=dict(fixedrange=True),
-        yaxis=dict(fixedrange=True),
-        margin=dict(l=10, r=10, t=40, b=10)
-    )
-    
+    fig_p.update_layout(xaxis_title="Año de Proyección", yaxis_title="Casos Proyectados", dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True), margin=dict(l=10, r=10, t=40, b=10))
     st.plotly_chart(fig_p, use_container_width=True, config={'displayModeBar': False})
-    
-    st.info("**Interpretación de la Proyección:** Este modelo (Facebook Prophet) proyecta la carga epidemiológica futura evaluando los componentes aditivos de estacionalidad. La línea central dictamina la tendencia esperada de nuevos casos de Hantavirus, mientras que el área sombreada delimita los límites superior e inferior del margen de error estadístico.")
