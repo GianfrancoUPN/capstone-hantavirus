@@ -56,6 +56,23 @@ NOMBRES_CORTOS = {
     'confirmed_cases': 'Casos'
 }
 
+# DICCIONARIO DE TRADUCCIÓN VISUAL PARA TABLAS
+TRADUCCION_COLUMNAS = {
+    'year': 'Año',
+    'country': 'País',
+    'confirmed_cases': 'Casos Confirmados',
+    'deaths': 'Muertes',
+    'syndrome': 'Síndrome',
+    'latitude': 'Latitud',
+    'longitude': 'Longitud',
+    'avg_temp_c': 'Temp Media (°C)',
+    'rainfall_mm': 'Precipitación (mm)',
+    'humidity_pct': 'Humedad (%)',
+    'rodent_abundance_index': 'Índice de Roedores',
+    'densidad_poblacional': 'Dens. Poblacional',
+    'Nivel_Riesgo': 'Nivel de Riesgo'
+}
+
 # ==========================================
 # 2. Carga y Preparación de Datos
 # ==========================================
@@ -97,7 +114,6 @@ def cargar_datos():
         'Spain': [40.4637, -3.7492]
     }
     
-    # Si el año 2026 se perdió, lo creamos forzosamente para que el dashboard lo muestre
     if 2026 not in df['year'].values:
         datos_2026 = []
         for pais, coords in coordenadas.items():
@@ -108,7 +124,6 @@ def cargar_datos():
             })
         df = pd.concat([df, pd.DataFrame(datos_2026)], ignore_index=True)
     else:
-        # Si existe, solo le corregimos las coordenadas
         for pais, coords in coordenadas.items():
             mask = (df['year'] == 2026) & (df['country'] == pais)
             df.loc[mask, 'latitude'] = coords[0]
@@ -259,14 +274,17 @@ if fase == "1. Data Understanding (Exploración)":
     
     with col2:
         st.subheader("Distribución Histórica (Variable Objetivo)")
-        fig_hist = px.histogram(df, x='confirmed_cases', nbins=30, color='Nivel_Riesgo', title="Frecuencia de las Etiquetas a Predecir")
-        fig_hist.update_layout(legend=dict(title="Etiqueta de Riesgo", orientation="h", yanchor="bottom", y=-0.4, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=30, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
+        # Traducción de los ejes del histograma a través de la propiedad labels
+        fig_hist = px.histogram(df, x='confirmed_cases', nbins=30, color='Nivel_Riesgo', title="Frecuencia de las Etiquetas a Predecir", labels={'confirmed_cases': 'Casos Confirmados'})
+        # Actualización de yaxis_title para quitar el "count" en inglés
+        fig_hist.update_layout(legend=dict(title="Etiqueta de Riesgo", orientation="h", yanchor="bottom", y=-0.4, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=30, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True, title="Frecuencia"))
         st.plotly_chart(fig_hist, use_container_width=True, config=PLOTLY_CONFIG)
         
         st.info("**Análisis del Histograma:** El gráfico demuestra un claro sesgo en la distribución de la data (imbalanced dataset): predominan los eventos de riesgo Bajo. La preservación de este desbalance natural justifica técnicamente la aplicación de ensambles avanzados robustos, como **XGBoost**, diseñados para penalizar asimétricamente los errores y clasificar correctamente los brotes de 'Riesgo Alto' (eventos minoritarios pero críticos).")
         
     st.subheader("Muestra del Dataset Consolidado")
-    st.dataframe(df.tail(15), use_container_width=True)
+    # Aplicando traducción al DataFrame de muestra
+    st.dataframe(df.tail(15).rename(columns=TRADUCCION_COLUMNAS), use_container_width=True)
 
 # ------------------------------------------
 # FASE 2: Modelado (Simulador)
@@ -284,16 +302,19 @@ elif fase == "2. Modeling (Entrenamiento y Simulación)":
     
     df_mapa = df if año_seleccionado == "Ver todos los años" else df[df['year'] == año_seleccionado]
         
+    # Traducción de la leyenda hover del mapa a través de la propiedad labels
     fig_map = px.scatter_geo(df_mapa, lat='latitude', lon='longitude', color='Nivel_Riesgo', size='confirmed_cases',
                              hover_name='country', 
                              hover_data={'Nivel_Riesgo': True, 'confirmed_cases': True, 'deaths': True, 'syndrome': True, 'latitude': False, 'longitude': False},
-                             color_discrete_map={'Bajo':'green','Medio':'orange','Alto':'red'})
+                             color_discrete_map={'Bajo':'green','Medio':'orange','Alto':'red'},
+                             labels={'confirmed_cases': 'Casos', 'deaths': 'Muertes', 'syndrome': 'Síndrome', 'Nivel_Riesgo': 'Riesgo', 'country': 'País'})
     
     fig_map.update_layout(margin=dict(l=0, r=0, t=0, b=0), legend=dict(orientation="h", y=-0.2, xanchor="center", x=0.5), dragmode=False)
     st.plotly_chart(fig_map, use_container_width=True, config=PLOTLY_CONFIG)
     
     st.subheader(f"📋 Datos Detallados del Periodo: {año_seleccionado}")
-    st.dataframe(df_mapa[['year', 'country', 'confirmed_cases', 'deaths', 'syndrome']], use_container_width=True)
+    # Aplicando traducción a la tabla de detalles
+    st.dataframe(df_mapa[['year', 'country', 'confirmed_cases', 'deaths', 'syndrome']].rename(columns=TRADUCCION_COLUMNAS), use_container_width=True)
     
     st.divider()
     c1, c2 = st.columns([1, 1])
@@ -373,7 +394,6 @@ elif fase == "2. Modeling (Entrenamiento y Simulación)":
             
         st.info("💡 **Simulación Global con Respaldo Científico:** Al incorporar un motor de búsqueda de 190 países, la IA no se limita a predecir sobre datos conocidos. El sistema permite evaluar la vulnerabilidad climática de territorios actualmente no endémicos. El algoritmo compara tu configuración contra el comportamiento histórico global para dictaminar, matemáticamente, si una anomalía ambiental detonaría un brote.")
 
-        # --- NUEVA INTERPRETACIÓN: DESACUERDO DE MODELOS ---
         st.warning("⚖️ **Desacuerdo de Modelos (Model Disagreement):** Es posible que Random Forest y XGBoost arrojen predicciones distintas para un mismo país bajo ciertas condiciones. Esto es una ventaja analítica propia de los Ensambles. *Random Forest (Bagging)* requiere evidencia climática abrumadora para emitir una alerta, actuando como confirmador de consenso. *XGBoost (Boosting)* es hiper-sensible a las anomalías sutiles, actuando como un radar de alerta temprana. Juntos ofrecen un espectro preventivo completo para el Ministerio de Salud.")
 
     with c2:
@@ -408,7 +428,8 @@ elif fase == "3. Evaluation (Métricas y Rendimiento)":
                     colores[i] = 'background-color: rgba(220, 53, 69, 0.3)' 
         return colores
 
-    st.dataframe(df_predicciones.style.apply(color_aciertos, axis=1), use_container_width=True)
+    # Renombrando las columnas base para presentarlas al jurado en español
+    st.dataframe(df_predicciones.rename(columns=TRADUCCION_COLUMNAS).style.apply(color_aciertos, axis=1), use_container_width=True)
     
     st.info("**Auditoría de Testeo a Ciegas:** El sistema audita una fracción de datos separada (Testing). Al comparar la 'Etiqueta Real' histórica contra la inferencia ciega del algoritmo, las coincidencias (celdas verdes) actúan como prueba fehaciente de que la IA ha asimilado patrones climáticos y no simplemente memorizado resultados pasados.")
 
@@ -420,7 +441,6 @@ elif fase == "3. Evaluation (Métricas y Rendimiento)":
     fig_acc.update_layout(yaxis_range=[0, 1], margin=dict(l=10, r=10, t=30, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
     st.plotly_chart(fig_acc, use_container_width=True, config=PLOTLY_CONFIG)
     
-    # --- INTERPRETACIÓN ACADÉMICA ACTUALIZADA AL NUEVO ACCURACY ---
     st.info("""**Restauración Analítica (Accuracy Validado):** A diferencia de iteraciones tempranas donde el modelo acusó sobreajuste (un 100% anómalo originado por pérdida de dimensionalidad durante la extracción satelital), esta versión utiliza una arquitectura de *Left Join* que preserva el 100% de la densidad epidemiológica histórica. 
 
 Como resultado, la Exactitud Global actual (posicionándose sólidamente en **81.82% para Random Forest** y **87.88% para XGBoost**) es rigurosa, estadísticamente realista y demuestra una **verdadera capacidad de generalización** en entornos de predicción reales, certificando el proyecto con un estándar de ingeniería idóneo para la sustentación.""")
@@ -503,7 +523,6 @@ Como resultado, la Exactitud Global actual (posicionándose sólidamente en **81
         fig_loss_xgb.update_layout(title="Curva de Pérdida (Boosting)", xaxis_title="Épocas (Rondas)", yaxis_title="Error (mlogloss)", legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=40, b=10), dragmode=False, xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True))
         st.plotly_chart(fig_loss_xgb, use_container_width=True, config=PLOTLY_CONFIG)
 
-    # --- INTERPRETACIÓN ACADÉMICA ACTUALIZADA AL NUEVO ROC Y AUC ---
     st.info("""**Convergencia Matemática Científica:** Las curvas ROC exhiben en esta iteración una convexidad progresiva y asintótica, desechando definitivamente el comportamiento errático (líneas rectas irreales) del modelo previamente sobreajustado. Las **Curvas de Pérdida (Log Loss)** confirman empíricamente que la línea de Validación desciende armónicamente junto con la de Entrenamiento. Esto certifica que el algoritmo detiene su aprendizaje de forma óptima antes de memorizar el ruido estadístico, alcanzando un equilibrio perfecto sesgo-varianza.""")
 
     st.divider()
@@ -529,12 +548,18 @@ Como resultado, la Exactitud Global actual (posicionándose sólidamente en **81
     # --- 4. MÉTRICAS DETALLADAS (Precision, Recall, F1) ---
     st.subheader("Desglose de Efectividad Multiclase (Precision, Recall, F1)")
     c_rep1, c_rep2 = st.columns(2)
+    
+    # TRADUCCIÓN VISUAL DE LOS INDICES (accuracy, macro avg, weighted avg)
+    indices_traducidos = {'accuracy': 'exactitud', 'macro avg': 'promedio macro', 'weighted avg': 'prom. ponderado'}
+    df_rf_rep_visual = pd.DataFrame(rf_rep).transpose().rename(index=indices_traducidos)
+    df_xgb_rep_visual = pd.DataFrame(xgb_rep).transpose().rename(index=indices_traducidos)
+
     with c_rep1:
         st.write("**Métricas Random Forest**")
-        st.dataframe(pd.DataFrame(rf_rep).transpose().style.format("{:.2f}").background_gradient(cmap='Blues'), use_container_width=True)
+        st.dataframe(df_rf_rep_visual.style.format("{:.2f}").background_gradient(cmap='Blues'), use_container_width=True)
     with c_rep2:
         st.write("**Métricas XGBoost**")
-        st.dataframe(pd.DataFrame(xgb_rep).transpose().style.format("{:.2f}").background_gradient(cmap='Oranges'), use_container_width=True)
+        st.dataframe(df_xgb_rep_visual.style.format("{:.2f}").background_gradient(cmap='Oranges'), use_container_width=True)
         
     st.info("""**Desempeño Específico (Sensibilidad Validada):** La integración del clima satelital puro ha estabilizado las métricas de **Recall (Sensibilidad)** y **F1-Score**. Esto garantiza que la proporción de interceptación de brotes graves es matemáticamente genuina. Certifica a XGBoost y Random Forest como motores de inferencia robustos, listos para lanzar alertas tempranas en el dashboard sin saturar el sistema preventivo con falsas alarmas.""")
 
