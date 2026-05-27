@@ -804,7 +804,7 @@ The fact that **Random Forest** achieves a score of **1.00 ({acc_rf:.1%})** is n
     st.divider()
 
     # --- TABLA DE CAMPEONES CON EXPLICACIÓN CIENTÍFICA DEL 1.00 ---
-    st.subheader("🏆 Veredicto de Rendimiento (Modelo Campeón)" if idioma == "Español" else "🏆 Performance Verdict (Champion Model)")
+    st.subheader("🏆 Métricas de rendimiento de los modelos de ML" if idioma == "Español" else "🏆  Performance metrics of ML models")
     
     ganador_df = pd.DataFrame({
         'Algoritmo' if idioma == 'Español' else 'Algorithm': ['Random Forest', 'XGBoost', 'Regresión Logística (Lineal)' if idioma == 'Español' else 'Logistic Regression (Linear)'],
